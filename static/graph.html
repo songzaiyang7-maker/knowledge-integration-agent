@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<script src="http://127.0.0.1:8080/echarts.min.js"></script>
+<style>
+  html, body, #graph-container { margin: 0; padding: 0; width: 100%; height: 100%; }
+</style>
+</head>
+<body>
+<div id="graph-container"></div>
+<script>
+(function() {
+  if (typeof echarts === 'undefined') {
+    document.getElementById('graph-container').innerHTML = '<p style="color:red;padding:20px;">ECharts 加载失败</p>';
+    return;
+  }
+  var chart = echarts.init(document.getElementById('graph-container'));
+  var nodes = [{"id": "b01_n01", "name": "静息电位", "symbolSize": 44, "category": 0, "itemStyle": {"color": "#5470C6"}, "label": {"show": true, "fontSize": 11}, "value": 2, "_definition": "细胞在未受刺激时，细胞膜内外两侧存在的电位差，表现为膜内为负、膜外为正的状态。", "_chapter": "第二章 细胞的基本功能", "_page": 25, "_textbook": "生理学", "_category_type": "核心概念"}, {"id": "b01_n02", "name": "动作电位", "symbolSize": 56, "category": 0, "itemStyle": {"color": "#5470C6"}, "label": {"show": true, "fontSize": 11}, "value": 3, "_definition": "细胞受到刺激后，膜电位发生的一次快速而可逆的倒转，以及随后恢复到原来静息电位水平的过程。", "_chapter": "第二章 细胞的基本功能", "_page": 35, "_textbook": "生理学", "_category_type": "核心概念"}, {"id": "b01_n03", "name": "血细胞", "symbolSize": 56, "category": 0, "itemStyle": {"color": "#5470C6"}, "label": {"show": true, "fontSize": 11}, "value": 3, "_definition": "血液中的细胞成分，包括红细胞、白细胞和血小板三类。", "_chapter": "第三章 血液", "_page": 70, "_textbook": "生理学", "_category_type": "核心概念"}, {"id": "b01_n04", "name": "红细胞", "symbolSize": 44, "category": 0, "itemStyle": {"color": "#5470C6"}, "label": {"show": true, "fontSize": 11}, "value": 2, "_definition": "血液中数量最多的血细胞，主要功能是运输氧气和二氧化碳。", "_chapter": "第三章 血液", "_page": 72, "_textbook": "生理学", "_category_type": "基本组成"}, {"id": "b01_n05", "name": "白细胞", "symbolSize": 68, "category": 0, "itemStyle": {"color": "#5470C6"}, "label": {"show": true, "fontSize": 11}, "value": 4, "_definition": "一类有核的血细胞，包括中性粒细胞、嗜酸性粒细胞、嗜碱性粒细胞、单核细胞和淋巴细胞，主要参与免疫防御。", "_chapter": "第三章 血液", "_page": 78, "_textbook": "生理学", "_category_type": "核心概念"}, {"id": "b01_n06", "name": "心脏泵血", "symbolSize": 32, "category": 0, "itemStyle": {"color": "#5470C6"}, "label": {"show": true, "fontSize": 11}, "value": 1, "_definition": "心脏通过节律性的收缩和舒张活动，将血液从静脉系统吸入，经动脉系统泵出，维持血液循环的过程。", "_chapter": "第四章 血液循环", "_page": 130, "_textbook": "生理学", "_category_type": "生理过程"}, {"id": "b01_n07", "name": "突触传递", "symbolSize": 32, "category": 0, "itemStyle": {"color": "#5470C6"}, "label": {"show": true, "fontSize": 11}, "value": 1, "_definition": "神经冲动从一个神经元传递到另一个神经元或效应器细胞的过程，包括化学突触传递和电突触传递。", "_chapter": "第九章 神经系统的功能", "_page": 370, "_textbook": "生理学", "_category_type": "生理过程"}, {"id": "b01_n08", "name": "神经递质", "symbolSize": 44, "category": 0, "itemStyle": {"color": "#5470C6"}, "label": {"show": true, "fontSize": 11}, "value": 2, "_definition": "由突触前膜释放，在突触间隙中扩散，与突触后膜受体结合，引起突触后膜电位变化的化学物质。", "_chapter": "第九章 神经系统的功能", "_page": 375, "_textbook": "生理学", "_category_type": "核心概念"}, {"id": "b01_n09", "name": "免疫应答", "symbolSize": 56, "category": 0, "itemStyle": {"color": "#5470C6"}, "label": {"show": true, "fontSize": 11}, "value": 3, "_definition": "机体免疫系统识别和排除抗原性异物，以维持自身稳定的生理过程，包括固有免疫和适应性免疫。", "_chapter": "第三章 血液", "_page": 95, "_textbook": "生理学", "_category_type": "生理过程"}, {"id": "b01_n10", "name": "T细胞", "symbolSize": 44, "category": 0, "itemStyle": {"color": "#5470C6"}, "label": {"show": true, "fontSize": 11}, "value": 2, "_definition": "由胸腺发育而来的淋巴细胞，主要参与细胞免疫，包括辅助性T细胞和细胞毒性T细胞。", "_chapter": "第三章 血液", "_page": 88, "_textbook": "生理学", "_category_type": "基本组成"}, {"id": "b02_n01", "name": "细胞适应", "symbolSize": 32, "category": 1, "itemStyle": {"color": "#91CC75"}, "label": {"show": true, "fontSize": 11}, "value": 1, "_definition": "细胞和组织对内外环境变化作出的非损伤性应答反应，包括萎缩、肥大、增生和化生。", "_chapter": "第一章 细胞和组织的适应与损伤", "_page": 5, "_textbook": "病理学", "_category_type": "核心概念"}, {"id": "b02_n02", "name": "细胞损伤", "symbolSize": 44, "category": 1, "itemStyle": {"color": "#91CC75"}, "label": {"show": true, "fontSize": 11}, "value": 2, "_definition": "细胞和组织受到超过适应能力的有害因子刺激后，出现的形态学和功能上的可逆或不可逆改变。", "_chapter": "第一章 细胞和组织的适应与损伤", "_page": 18, "_textbook": "病理学", "_category_type": "核心概念"}, {"id": "b02_n03", "name": "炎症", "symbolSize": 68, "category": 1, "itemStyle": {"color": "#91CC75"}, "label": {"show": true, "fontSize": 11}, "value": 4, "_definition": "具有血管系统的活体组织对各种损伤因子的刺激所发生的以防御为主的局部组织反应，包括红、肿、热、痛和功能障碍。", "_chapter": "第四章 炎症", "_page": 112, "_textbook": "病理学", "_category_type": "核心概念"}, {"id": "b02_n04", "name": "白细胞", "symbolSize": 68, "category": 1, "itemStyle": {"color": "#91CC75"}, "label": {"show": true, "fontSize": 11}, "value": 4, "_definition": "炎症反应中的主要效应细胞，包括中性粒细胞、巨噬细胞、淋巴细胞等，参与炎症的各个阶段。", "_chapter": "第四章 炎症", "_page": 120, "_textbook": "病理学", "_category_type": "核心概念"}, {"id": "b02_n05", "name": "免疫应答", "symbolSize": 56, "category": 1, "itemStyle": {"color": "#91CC75"}, "label": {"show": true, "fontSize": 11}, "value": 3, "_definition": "机体对抗原刺激产生的特异性免疫反应，包括体液免疫和细胞免疫，在防御感染和肿瘤监视中起关键作用。", "_chapter": "第五章 免疫性疾病", "_page": 170, "_textbook": "病理学", "_category_type": "生理过程"}, {"id": "b02_n06", "name": "T淋巴细胞", "symbolSize": 44, "category": 1, "itemStyle": {"color": "#91CC75"}, "label": {"show": true, "fontSize": 11}, "value": 2, "_definition": "来源于骨髓并在胸腺中成熟的淋巴细胞，介导细胞免疫应答，是适应性免疫的核心组成部分。", "_chapter": "第五章 免疫性疾病", "_page": 178, "_textbook": "病理学", "_category_type": "基本组成"}, {"id": "b02_n07", "name": "修复", "symbolSize": 32, "category": 1, "itemStyle": {"color": "#91CC75"}, "label": {"show": true, "fontSize": 11}, "value": 1, "_definition": "组织损伤后通过细胞再生和纤维结缔组织增生来修补缺损的过程，包括完全再生和不完全再生。", "_chapter": "第二章 损伤的修复", "_page": 42, "_textbook": "病理学", "_category_type": "生理过程"}, {"id": "b02_n08", "name": "肉芽组织", "symbolSize": 32, "category": 1, "itemStyle": {"color": "#91CC75"}, "label": {"show": true, "fontSize": 11}, "value": 1, "_definition": "由新生薄壁毛细血管和成纤维细胞构成的幼稚结缔组织，伴有炎性细胞浸润，是创伤修复的重要成分。", "_chapter": "第二章 损伤的修复", "_page": 50, "_textbook": "病理学", "_category_type": "核心概念"}];
+  var edges = [{"source": "b01_n01", "target": "b01_n02", "lineStyle": {"type": "solid", "width": 2, "color": "#555", "curveness": 0.1}, "label": {"show": false, "formatter": "prerequisite", "fontSize": 9}, "_relation_type": "prerequisite", "_description": "理解动作电位需要先掌握静息电位的概念"}, {"source": "b01_n05", "target": "b01_n09", "lineStyle": {"type": "solid", "width": 2, "color": "#555", "curveness": 0.1}, "label": {"show": false, "formatter": "prerequisite", "fontSize": 9}, "_relation_type": "prerequisite", "_description": "理解免疫应答需要先了解白细胞的功能"}, {"source": "b02_n02", "target": "b02_n03", "lineStyle": {"type": "solid", "width": 2, "color": "#555", "curveness": 0.1}, "label": {"show": false, "formatter": "prerequisite", "fontSize": 9}, "_relation_type": "prerequisite", "_description": "炎症是机体对细胞损伤的防御反应"}, {"source": "b01_n03", "target": "b01_n04", "lineStyle": {"type": "dotted", "width": 1.5, "color": "#666", "curveness": 0.15}, "label": {"show": false, "formatter": "contains", "fontSize": 9}, "_relation_type": "contains", "_description": "血细胞包含红细胞"}, {"source": "b02_n02", "target": "b02_n07", "lineStyle": {"type": "solid", "width": 2, "color": "#555", "curveness": 0.1}, "label": {"show": false, "formatter": "prerequisite", "fontSize": 9}, "_relation_type": "prerequisite", "_description": "修复过程发生在细胞损伤之后"}, {"source": "b01_n04", "target": "b01_n05", "lineStyle": {"type": "dashed", "width": 1.5, "color": "#999", "curveness": 0.2}, "label": {"show": false, "formatter": "parallel", "fontSize": 9}, "_relation_type": "parallel", "_description": "红细胞和白细胞同为血细胞的并列组成"}, {"source": "b02_n01", "target": "b02_n02", "lineStyle": {"type": "dashed", "width": 1.5, "color": "#999", "curveness": 0.2}, "label": {"show": false, "formatter": "parallel", "fontSize": 9}, "_relation_type": "parallel", "_description": "细胞适应与细胞损伤是细胞对刺激的两种不同反应"}, {"source": "b01_n03", "target": "b01_n05", "lineStyle": {"type": "dotted", "width": 1.5, "color": "#666", "curveness": 0.15}, "label": {"show": false, "formatter": "contains", "fontSize": 9}, "_relation_type": "contains", "_description": "血细胞包含白细胞"}, {"source": "b01_n09", "target": "b01_n10", "lineStyle": {"type": "dotted", "width": 1.5, "color": "#666", "curveness": 0.15}, "label": {"show": false, "formatter": "contains", "fontSize": 9}, "_relation_type": "contains", "_description": "免疫应答包含T细胞的参与"}, {"source": "b02_n05", "target": "b02_n06", "lineStyle": {"type": "dotted", "width": 1.5, "color": "#666", "curveness": 0.15}, "label": {"show": false, "formatter": "contains", "fontSize": 9}, "_relation_type": "contains", "_description": "免疫应答包含T淋巴细胞介导的细胞免疫"}, {"source": "b02_n07", "target": "b02_n08", "lineStyle": {"type": "dotted", "width": 1.5, "color": "#666", "curveness": 0.15}, "label": {"show": false, "formatter": "contains", "fontSize": 9}, "_relation_type": "contains", "_description": "修复过程包含肉芽组织的形成"}, {"source": "b01_n09", "target": "b01_n05", "lineStyle": {"type": "dashed", "width": 2, "color": "#888", "curveness": 0.1}, "label": {"show": false, "formatter": "applies_to", "fontSize": 9}, "_relation_type": "applies_to", "_description": "免疫应答主要由白细胞执行"}, {"source": "b01_n08", "target": "b01_n07", "lineStyle": {"type": "dashed", "width": 2, "color": "#888", "curveness": 0.1}, "label": {"show": false, "formatter": "applies_to", "fontSize": 9}, "_relation_type": "applies_to", "_description": "神经递质是突触传递的物质基础"}, {"source": "b02_n04", "target": "b02_n03", "lineStyle": {"type": "dashed", "width": 2, "color": "#888", "curveness": 0.1}, "label": {"show": false, "formatter": "applies_to", "fontSize": 9}, "_relation_type": "applies_to", "_description": "白细胞是炎症反应的主要效应细胞"}, {"source": "b02_n06", "target": "b02_n05", "lineStyle": {"type": "dashed", "width": 2, "color": "#888", "curveness": 0.1}, "label": {"show": false, "formatter": "applies_to", "fontSize": 9}, "_relation_type": "applies_to", "_description": "T淋巴细胞是免疫应答的执行者"}, {"source": "b01_n02", "target": "b02_n02", "lineStyle": {"type": "solid", "width": 2, "color": "#555", "curveness": 0.1}, "label": {"show": false, "formatter": "prerequisite", "fontSize": 9}, "_relation_type": "prerequisite", "_description": "理解细胞损伤需要了解正常的细胞电生理活动"}, {"source": "b01_n05", "target": "b02_n04", "lineStyle": {"type": "dashed", "width": 1.5, "color": "#999", "curveness": 0.2}, "label": {"show": false, "formatter": "parallel", "fontSize": 9}, "_relation_type": "parallel", "_description": "两本教材中的白细胞概念高度相关"}, {"source": "b01_n09", "target": "b02_n05", "lineStyle": {"type": "dashed", "width": 1.5, "color": "#999", "curveness": 0.2}, "label": {"show": false, "formatter": "parallel", "fontSize": 9}, "_relation_type": "parallel", "_description": "两本教材中的免疫应答概念高度相关"}, {"source": "b01_n10", "target": "b02_n06", "lineStyle": {"type": "dashed", "width": 1.5, "color": "#999", "curveness": 0.2}, "label": {"show": false, "formatter": "parallel", "fontSize": 9}, "_relation_type": "parallel", "_description": "T细胞与T淋巴细胞指同一类细胞"}];
+  var categories = [{"name": "生理学"}, {"name": "病理学"}];
+
+  var option = {
+    title: { text: '整合前', left: 'center', top: 5, textStyle: { fontSize: 16 } },
+    tooltip: {
+      trigger: 'item',
+      formatter: function(params) {
+        if (params.dataType === 'node') {
+          var d = params.data;
+          return '<b>' + d.name + '</b><br/>' +
+            '来源: ' + d._textbook + '<br/>' +
+            '类型: ' + d._category_type + '<br/>' +
+            (d._chapter ? '章节: ' + d._chapter + '<br/>' : '') +
+            '频次: ' + d.value;
+        }
+        if (params.dataType === 'edge') {
+          var e = params.data;
+          return '<b>' + e._relation_type + '</b><br/>' + e._description;
+        }
+        return '';
+      }
+    },
+    legend: {
+      data: categories.map(function(c) { return c.name; }),
+      bottom: 5,
+      textStyle: { fontSize: 12 }
+    },
+    animationDuration: 1500,
+    animationEasingUpdate: 'quinticInOut',
+    series: [{
+      type: 'graph',
+      layout: 'force',
+      data: nodes,
+      links: edges,
+      categories: categories,
+      roam: true,
+      draggable: true,
+      force: {
+        repulsion: 300,
+        edgeLength: [80, 200],
+        gravity: 0.1,
+      },
+      label: {
+        show: true,
+        position: 'right',
+        formatter: '{{b}}',
+        fontSize: 11,
+      },
+      edgeSymbol: ['none', 'arrow'],
+      edgeSymbolSize: [4, 8],
+      emphasis: {
+        focus: 'adjacency',
+        lineStyle: { width: 4 }
+      },
+    }]
+  };
+
+  chart.setOption(option);
+  window.addEventListener('resize', function() { chart.resize(); });
+})();
+</script>
+</body>
+</html>

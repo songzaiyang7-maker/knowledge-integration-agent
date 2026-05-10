@@ -1,0 +1,10 @@
+venv/
+__pycache__/
+*.pyc
+.env
+node_modules/
+
+# 教材数据（不上传到 GitHub）
+data/textbooks/
+*.pdf
+data/
