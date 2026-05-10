@@ -46,7 +46,11 @@
       "Bash(xargs -I{} taskkill //PID {} //F)",
       "Bash(git init *)",
       "Bash(git branch *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(gh repo *)",
+      "Bash(venv/Scripts/pip install *)",
+      "Bash(venv/Scripts/python -c ' *)"
     ],
     "additionalDirectories": [
       "c:\\projects\\AI黑客松"

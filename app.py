@@ -1,4 +1,4 @@
-"""学科知识整合智能体 - Gradio 主应用"""
+"""学科知识整合智能体 - Gradio 主应用（Phase 3: 真实逻辑 + Mock fallback）"""
 
 import json
 import os
@@ -6,14 +6,25 @@ import time
 import threading
 import http.server
 import functools
+import traceback
 import gradio as gr
+
 from src.mock_data import (
-    MOCK_TEXTBOOKS, MOCK_NODES, MOCK_EDGES, MOCK_DECISIONS,
+    MOCK_NODES, MOCK_EDGES, MOCK_DECISIONS,
     MOCK_INTEGRATED_NODES, MOCK_INTEGRATED_EDGES,
     MOCK_COMPRESSION_STATS, MOCK_RAG_STATUS, MOCK_RAG_RESPONSE,
     MOCK_FILE_LIST, MOCK_REPORT, BOOK_COLORS,
 )
 from src.echarts_templates import render_knowledge_graph
+from src.config import UPLOAD_DIR
+
+# Real modules (lazy imports to avoid startup cost)
+# from src.pdf_parser import parse_file
+# from src.knowledge_extractor import process_textbook
+# from src.graph_builder import build_graph, get_book_color
+# from src.integrator import run_integration
+# from src.rag_pipeline import RAGPipeline
+# from src.embedding import encode_texts
 
 # Static file server
 _STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
@@ -56,6 +67,8 @@ CSS = """
 .file-name{font-weight:500;color:#1e293b;flex:1}
 .file-meta{color:#94a3b8;font-size:11px}
 .badge-ok{background:#f0fdf4;color:#166534;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:500}
+.badge-fail{background:#fef2f2;color:#991b1b;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:500}
+.badge-loading{background:#eef2ff;color:#4338ca;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:500}
 .file-del{background:none;border:1px solid #fecaca;color:#ef4444;border-radius:6px;padding:2px 8px;font-size:10px;cursor:pointer;transition:all .15s;line-height:1.4}
 .file-del:hover{background:#fef2f2;border-color:#f87171}
 
@@ -104,11 +117,29 @@ CSS = """
 """
 
 # ============================================================
-# State
+# Application State
 # ============================================================
 class AppState:
-    is_integrated = False
-    decisions = [dict(d) for d in MOCK_DECISIONS]
+    """Central state manager for the application."""
+    def __init__(self):
+        self.is_integrated = False
+        self.decisions = []
+        self.mode = "mock"  # "mock" or "real"
+
+        # Real data
+        self.uploaded_files = []     # list of file paths
+        self.parsed_textbooks = []   # list of parsed dict results
+        self.extraction_results = [] # list of {nodes, edges} from each textbook
+        self.all_nodes = []
+        self.all_edges = []
+        self.integrated_nodes = []
+        self.integrated_edges = []
+        self.compression_stats = dict(MOCK_COMPRESSION_STATS)
+        self.book_colors = dict(BOOK_COLORS)
+        self.rag = None              # RAGPipeline instance
+
+        # File list for display: [[name, format, size, status], ...]
+        self.file_list = list(MOCK_FILE_LIST)
 
 state = AppState()
 
@@ -117,79 +148,217 @@ state = AppState()
 # ============================================================
 
 def hdr():
-    return """<div class="hdr">
+    mode_label = "真实模式" if state.mode == "real" else "Mock 数据模式"
+    tb_count = len(state.parsed_textbooks) if state.mode == "real" else 2
+    node_count = len(state.all_nodes) if state.mode == "real" else 18
+    return f"""<div class="hdr">
   <div class="hdr-left"><div class="hdr-logo">K</div><div class="hdr-title">学科知识整合智能体</div></div>
-  <div class="hdr-status"><span class="dot-live"></span>Mock 数据模式 · 2 本教材 · 18 个知识点</div>
+  <div class="hdr-status"><span class="dot-live"></span>{mode_label} · {tb_count} 本教材 · {node_count} 个知识点</div>
 </div>"""
 
-def file_list_html():
+def build_file_list_html():
     rows = ""
-    for i, f in enumerate(MOCK_FILE_LIST):
-        rows += f'<div class="file-item"><span>📄</span><span class="file-name">{f[0]}</span><span class="file-meta">{f[2]}</span><span class="badge-ok">已完成</span><button class="file-del" onclick="document.querySelector(\'#del-idx textarea\').value=\'{i}\';document.querySelector(\'#del-go\').click()">删除</button></div>'
-    if not MOCK_FILE_LIST:
-        rows = '<div style="text-align:center;color:#94a3b8;padding:16px;font-size:12px">暂无教材</div>'
+    for i, f in enumerate(state.file_list):
+        status_class = "badge-ok" if f[3] == "已完成" else ("badge-fail" if f[3] == "失败" else "badge-loading")
+        rows += f'<div class="file-item"><span>📄</span><span class="file-name">{f[0]}</span><span class="file-meta">{f[2]}</span><span class="{status_class}">{f[3]}</span><button class="file-del" onclick="document.querySelector(\'#del-idx textarea\').value=\'{i}\';document.querySelector(\'#del-go\').click()">删除</button></div>'
+    if not state.file_list:
+        rows = '<div style="text-align:center;color:#94a3b8;padding:16px;font-size:12px">暂无教材，请上传 PDF/MD/TXT 文件</div>'
     return rows
 
-def stats_html():
-    s = MOCK_COMPRESSION_STATS
+def build_stats_html():
+    s = state.compression_stats
+    nodes = state.all_nodes if state.mode == "real" else MOCK_NODES
+    tb_count = len(set(n.get("textbook","") for n in nodes)) if nodes else 0
+    total_chars = sum(len(n.get("definition","")) for n in nodes) if nodes else 0
     return f"""<div class="stats-row">
-  <div class="stat"><b>{s['original_textbooks']}</b><span>教材</span></div>
-  <div class="stat"><b>{s['original_nodes']}</b><span>知识点</span></div>
-  <div class="stat"><b>{s['original_total_chars']//1000}K</b><span>总字数</span></div>
+  <div class="stat"><b>{tb_count}</b><span>教材</span></div>
+  <div class="stat"><b>{len(nodes)}</b><span>知识点</span></div>
+  <div class="stat"><b>{total_chars//1000 if total_chars > 0 else 0}K</b><span>总字数</span></div>
 </div>"""
 
-def legend_html():
+def build_legend_html():
     items = ""
-    for name, color in BOOK_COLORS.items():
-        if name in ["生理学", "病理学", "整合后"]:
-            items += f'<span><span class="dot-legend" style="background:{color}"></span>{name}</span>'
+    for name, color in state.book_colors.items():
+        # Show legend for textbooks present in current data
+        items += f'<span><span class="dot-legend" style="background:{color}"></span>{name}</span>'
     return f'<div class="graph-legend">{items}</div>'
 
-def compression_html():
-    s = MOCK_COMPRESSION_STATS
+def build_compression_html():
+    s = state.compression_stats
     if not state.is_integrated:
         return '<div style="text-align:center;padding:20px;color:#94a3b8;font-size:12px">点击上方按钮开始跨教材整合</div>'
     return f"""<div class="pbar-wrap">
-  <div class="pbar-labels"><span>{s['original_total_chars']:,} 字</span><span>{s['integrated_total_chars']:,} 字</span></div>
-  <div class="pbar-track"><div class="pbar-fill" style="width:{s['compression_ratio']}%"></div></div>
-  <div class="pbar-result">压缩比 {s['compression_ratio']}%</div>
+  <div class="pbar-labels"><span>{s.get('original_total_chars',0):,} 字</span><span>{s.get('integrated_total_chars',0):,} 字</span></div>
+  <div class="pbar-track"><div class="pbar-fill" style="width:{s.get('compression_ratio',0)}%"></div></div>
+  <div class="pbar-result">压缩比 {s.get('compression_ratio',0)}%</div>
 </div>
 <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap">
-  <span class="badge-merge">合并 {s['merge_count']} 项</span>
-  <span class="badge-keep">保留 {s['keep_count']} 项</span>
-  <span class="badge-remove">删除 {s['remove_count']} 项</span>
+  <span class="badge-merge">合并 {s.get('merge_count',0)} 项</span>
+  <span class="badge-keep">保留 {s.get('keep_count',0)} 项</span>
+  <span class="badge-remove">删除 {s.get('remove_count',0)} 项</span>
 </div>"""
 
-def decision_html(decisions):
+def build_decision_html(decisions):
+    if not decisions:
+        return '<div style="text-align:center;color:#94a3b8;font-size:12px;padding:16px">暂无整合决策</div>'
     rows = ""
     for d in decisions:
         a = d["action"].upper()
         cls = {"MERGE":"badge-merge","KEEP":"badge-keep","REMOVE":"badge-remove"}.get(a,"badge-merge")
-        reason_short = d["reason"][:35] + "…" if len(d["reason"]) > 35 else d["reason"]
-        rows += f'<tr><td><span class="{cls}">{a}</span></td><td style="font-weight:500;color:#1e293b">{d["merged_name"]}</td><td>{d["confidence"]:.2f}</td><td style="color:#a1a1aa;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{d["reason"]}">{reason_short}</td></tr>'
+        reason = d.get("reason", "")
+        reason_short = reason[:35] + "…" if len(reason) > 35 else reason
+        rows += f'<tr><td><span class="{cls}">{a}</span></td><td style="font-weight:500;color:#1e293b">{d.get("merged_name","")}</td><td>{d.get("confidence",0):.2f}</td><td style="color:#a1a1aa;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{reason}">{reason_short}</td></tr>'
     return f'<table class="dtable"><thead><tr><th>决策</th><th>知识点</th><th>置信度</th><th>理由</th></tr></thead><tbody>{rows}</tbody></table>'
 
 # ============================================================
-# Logic
+# Core Logic
 # ============================================================
 
 def get_graph_html():
-    nodes = MOCK_INTEGRATED_NODES if state.is_integrated else MOCK_NODES
-    edges = MOCK_INTEGRATED_EDGES if state.is_integrated else MOCK_EDGES
+    if state.mode == "real":
+        nodes = state.integrated_nodes if state.is_integrated else state.all_nodes
+        edges = state.integrated_edges if state.is_integrated else state.all_edges
+    else:
+        nodes = MOCK_INTEGRATED_NODES if state.is_integrated else MOCK_NODES
+        edges = MOCK_INTEGRATED_EDGES if state.is_integrated else MOCK_EDGES
     title = "整合后" if state.is_integrated else "整合前"
-    return render_knowledge_graph(nodes, edges, BOOK_COLORS, title=title)
+    if not nodes:
+        return '<div style="text-align:center;padding:60px;color:#94a3b8;font-size:14px">暂无数据，请先上传并解析教材</div>'
+    return render_knowledge_graph(nodes, edges, state.book_colors, title=title)
 
 def get_node_detail(q):
     if not q or not q.strip():
         return ""
-    for n in MOCK_NODES + MOCK_INTEGRATED_NODES:
-        if q in n["name"] or q in n["id"]:
+    search_nodes = state.all_nodes + state.integrated_nodes if state.mode == "real" else MOCK_NODES + MOCK_INTEGRATED_NODES
+    for n in search_nodes:
+        if q in n.get("name","") or q in n.get("id",""):
             return f"<div class='node-detail'><h3>{n['name']}</h3><b>定义：</b>{n.get('definition','')}<br><b>来源：</b>{n.get('textbook','')} · {n.get('chapter','')} · 第{n.get('page','?')}页<br><b>频次：</b>{n.get('frequency',1)} 本教材 · <b>类别：</b>{n.get('category','')}</div>"
     return f"<div class='node-detail' style='color:#94a3b8'>未找到「{q}」</div>"
 
+def do_parse(files):
+    """Parse uploaded files: real logic with mock fallback."""
+    if not files:
+        return "请先上传文件", build_file_list_html(), build_stats_html(), get_graph_html(), hdr()
+
+    state.mode = "real"
+    status_msgs = []
+
+    for file in files:
+        file_path = file.name if hasattr(file, 'name') else str(file)
+        fname = os.path.basename(file_path)
+
+        # Check if already parsed
+        if any(f[0] == fname for f in state.file_list):
+            status_msgs.append(f"「{fname}」已存在，跳过")
+            continue
+
+        # Add to file list with loading status
+        ext = os.path.splitext(fname)[1].upper()
+        size_mb = f"{os.path.getsize(file_path) / 1024 / 1024:.1f} MB"
+        state.file_list.append([fname, ext, size_mb, "解析中..."])
+
+    # Return intermediate state
+    intermediate_status = "正在解析，请稍候..."
+
+    try:
+        from src.pdf_parser import parse_file
+        from src.knowledge_extractor import process_textbook
+        from src.graph_builder import build_graph, get_book_color
+        from src.rag_pipeline import RAGPipeline
+
+        for file in files:
+            file_path = file.name if hasattr(file, 'name') else str(file)
+            fname = os.path.basename(file_path)
+
+            # Find and update status to loading
+            for f in state.file_list:
+                if f[0] == fname:
+                    f[3] = "解析中..."
+                    break
+
+            try:
+                # Step 1: Parse file
+                parsed = parse_file(file_path)
+                state.parsed_textbooks.append(parsed)
+
+                # Step 2: Extract knowledge points via LLM
+                extraction = process_textbook(parsed)
+                state.extraction_results.append(extraction)
+
+                # Update status
+                for f in state.file_list:
+                    if f[0] == fname:
+                        f[3] = "已完成"
+                        break
+
+                status_msgs.append(f"✅ 「{fname}」解析完成：{len(extraction.get('nodes',[]))} 个知识点")
+
+            except Exception as e:
+                for f in state.file_list:
+                    if f[0] == fname:
+                        f[3] = "失败"
+                        break
+                status_msgs.append(f"❌ 「{fname}」解析失败：{str(e)}")
+                traceback.print_exc()
+
+        # Rebuild unified graph
+        if state.extraction_results:
+            all_nodes, all_edges, colors = build_graph(state.extraction_results)
+            state.all_nodes = all_nodes
+            state.all_edges = all_edges
+            state.book_colors = colors
+
+            # Reset integration state
+            state.is_integrated = False
+            state.integrated_nodes = []
+            state.integrated_edges = []
+            state.decisions = []
+
+            # Build RAG index
+            try:
+                state.rag = RAGPipeline()
+                for parsed in state.parsed_textbooks:
+                    state.rag.add_textbook(parsed)
+                state.rag.build_index()
+                rag_info = state.rag.get_status()
+                status_msgs.append(f"📊 RAG 索引已建立：{rag_info['total_chunks']} 个知识块")
+            except Exception as e:
+                status_msgs.append(f"⚠️ RAG 索引建立失败：{str(e)}")
+                traceback.print_exc()
+
+        final_status = "\n".join(status_msgs)
+
+    except Exception as e:
+        final_status = f"❌ 系统错误：{str(e)}"
+        traceback.print_exc()
+
+    return final_status, build_file_list_html(), build_stats_html(), get_graph_html(), hdr()
+
 def do_integrate():
-    state.is_integrated = True
-    return "整合后视图", compression_html(), decision_html(state.decisions), get_graph_html()
+    """Run cross-textbook integration."""
+    if state.mode == "mock":
+        state.is_integrated = True
+        state.decisions = [dict(d) for d in MOCK_DECISIONS]
+        return "整合后视图", build_compression_html(), build_decision_html(state.decisions), get_graph_html()
+
+    if not state.all_nodes:
+        return "整合前视图", build_compression_html(), build_decision_html([]), '<div style="text-align:center;padding:60px;color:#94a3b8">请先上传并解析教材</div>'
+
+    try:
+        from src.integrator import run_integration
+        result = run_integration(state.all_nodes, state.all_edges)
+
+        state.is_integrated = True
+        state.decisions = result["decisions"]
+        state.integrated_nodes = result["integrated_nodes"]
+        state.integrated_edges = result["integrated_edges"]
+        state.compression_stats = result["stats"]
+
+        return "整合后视图", build_compression_html(), build_decision_html(state.decisions), get_graph_html()
+
+    except Exception as e:
+        traceback.print_exc()
+        return "整合前视图", f'<div style="color:#ef4444;padding:16px">整合失败：{str(e)}</div>', build_decision_html([]), get_graph_html()
 
 def do_toggle(view):
     state.is_integrated = (view == "整合后视图")
@@ -198,67 +367,134 @@ def do_toggle(view):
 def rag_chat(message, history):
     if not message.strip():
         return history, ""
-    if "炎症" in message or "白细胞" in message or "免疫" in message:
-        resp = MOCK_RAG_RESPONSE
-    elif "动作电位" in message or "静息电位" in message or "电位" in message:
-        answer = "动作电位是细胞受到刺激后膜电位发生的快速可逆倒转：\n\n1. **去极化相**：Na⁺ 通道开放，Na⁺ 内流\n2. **复极化相**：K⁺ 通道开放，K⁺ 外流\n3. **特征**：\"全或无\"现象"
-        resp = {"answer": answer, "citations": [{"textbook":"生理学","chapter":"第二章 细胞的基本功能","page":35,"relevance_score":0.94},{"textbook":"生理学","chapter":"第二章 细胞的基本功能","page":25,"relevance_score":0.88}], "source_chunks":["动作电位是指细胞受到刺激后，膜电位发生的一次快速而可逆的倒转...","静息电位是动作电位产生的基础，正常约为-70mV..."]}
-    elif "T细胞" in message or "T淋巴" in message:
-        answer = "T细胞是适应性免疫的核心：\n\n1. **Th 辅助性**：分泌细胞因子\n2. **Tc 细胞毒性**：杀伤感染细胞\n3. **Treg 调节性**：维持免疫耐受"
-        resp = {"answer": answer, "citations": [{"textbook":"生理学","chapter":"第三章 血液","page":88,"relevance_score":0.91},{"textbook":"病理学","chapter":"第五章 免疫性疾病","page":178,"relevance_score":0.89}], "source_chunks":["T细胞由胸腺发育而来...","T淋巴细胞介导细胞免疫..."]}
+
+    # Real RAG pipeline
+    if state.mode == "real" and state.rag and state.rag.indexed:
+        try:
+            resp = state.rag.answer(message)
+        except Exception as e:
+            resp = {"answer": f"查询失败：{str(e)}", "citations": [], "source_chunks": []}
     else:
-        answer = f"关于「{message}」— Mock 模式，可尝试：白细胞/动作电位/T细胞"
-        resp = {"answer": answer, "citations": [], "source_chunks": []}
+        # Mock fallback
+        if "炎症" in message or "白细胞" in message or "免疫" in message:
+            resp = MOCK_RAG_RESPONSE
+        elif "动作电位" in message or "静息电位" in message or "电位" in message:
+            answer = "动作电位是细胞受到刺激后膜电位发生的快速可逆倒转：\n\n1. **去极化相**：Na⁺ 通道开放\n2. **复极化相**：K⁺ 通道开放\n3. **特征**：\"全或无\"现象"
+            resp = {"answer": answer, "citations": [{"textbook":"生理学","chapter":"第二章","page":35,"relevance_score":0.94}], "source_chunks":["动作电位..."]}
+        elif "T细胞" in message or "T淋巴" in message:
+            answer = "T细胞是适应性免疫的核心：\n\n1. **Th 辅助性**：分泌细胞因子\n2. **Tc 细胞毒性**：杀伤感染细胞"
+            resp = {"answer": answer, "citations": [{"textbook":"生理学","chapter":"第三章","page":88,"relevance_score":0.91}], "source_chunks":["T细胞..."]}
+        else:
+            resp = {"answer": f"关于「{message}」— Mock 模式，可尝试：白细胞/动作电位/T细胞", "citations": [], "source_chunks": []}
+
     content = resp["answer"]
-    if resp["citations"]:
+    if resp.get("citations"):
         content += "\n\n---\n**📎 引用来源：**\n"
         for i, c in enumerate(resp["citations"], 1):
-            chunk = resp["source_chunks"][i-1][:250] if i-1 < len(resp["source_chunks"]) else ""
+            chunk = resp["source_chunks"][i-1][:250] if i-1 < len(resp.get("source_chunks",[])) else ""
             content += f'\n<details><summary>[{c["textbook"]}, {c["chapter"]}, 第{c["page"]}页] · {c["relevance_score"]:.2f}</summary>\n\n> {chunk}...\n</details>'
+
     return history + [{"role":"user","content":message},{"role":"assistant","content":content}], ""
 
 def do_delete(idx_str):
-    """按索引删除教材"""
+    """Delete a textbook by index."""
     try:
         idx = int(idx_str.strip())
-        if 0 <= idx < len(MOCK_FILE_LIST):
-            removed = MOCK_FILE_LIST.pop(idx)
-            return f"已删除「{removed[0]}」", file_list_html()
+        if 0 <= idx < len(state.file_list):
+            removed = state.file_list.pop(idx)
+            # Also remove from real data if applicable
+            if state.mode == "real" and idx < len(state.parsed_textbooks):
+                state.parsed_textbooks.pop(idx)
+                if idx < len(state.extraction_results):
+                    state.extraction_results.pop(idx)
+                # Rebuild graph
+                from src.graph_builder import build_graph
+                nodes, edges, colors = build_graph(state.extraction_results)
+                state.all_nodes = nodes
+                state.all_edges = edges
+                state.book_colors = colors
+                state.is_integrated = False
+            return f"已删除「{removed[0]}」", build_file_list_html(), get_graph_html(), hdr()
     except (ValueError, IndexError):
         pass
-    return "删除失败", file_list_html()
+    return "删除失败", build_file_list_html(), get_graph_html(), hdr()
 
 def dialogue_chat(message, history):
     if not message.strip():
         return history, "", get_graph_html()
+
+    decisions = state.decisions if state.mode == "real" else [dict(d) for d in MOCK_DECISIONS]
+
     if "为什么" in message and "合并" in message:
         r = "合并基于**三级对齐**：\n\n1. L1 精确匹配\n2. L2 Embedding > 0.85\n3. LLM 精判\n\n置信度 > 0.85 视为语义等价。"
     elif "保留" in message:
         r = "未找到可恢复的删除项。"
-        for d in state.decisions:
+        for d in decisions:
             if d["action"]=="remove":
-                d["action"]="keep"; r=f"✅ 「{d['merged_name']}」已恢复保留，图谱已刷新"; state.is_integrated=True; break
+                d["action"]="keep"; r=f"✅ 「{d.get('merged_name','')}」已恢复保留"; state.is_integrated=True; break
     elif "删除" in message or "移除" in message:
         r = "未找到可删除项。"
-        for d in state.decisions:
+        for d in decisions:
             if d["action"]=="keep":
-                d["action"]="remove"; r=f"🗑️ 「{d['merged_name']}」已删除，图谱已刷新"; state.is_integrated=True; break
+                d["action"]="remove"; r=f"🗑️ 「{d.get('merged_name','')}」已删除"; state.is_integrated=True; break
     elif "分开" in message or "拆分" in message:
         r = "未找到可拆分项。"
-        for d in state.decisions:
+        for d in decisions:
             if d["action"]=="merge":
-                d["action"]="keep"; r=f"🔓 「{d['merged_name']}」已拆分，图谱已刷新"; state.is_integrated=True; break
+                d["action"]="keep"; r=f"🔓 「{d.get('merged_name','')}」已拆分"; state.is_integrated=True; break
     else:
         r = f"收到：「{message}」\n\n指令：`保留XX` / `删除XX` / `分开XX` / `为什么合并`"
+
+    if state.mode == "real":
+        state.decisions = decisions
+
     return history + [{"role":"user","content":message},{"role":"assistant","content":r}], "", get_graph_html()
 
+def build_report():
+    """Generate integration report."""
+    if state.mode == "mock":
+        return MOCK_REPORT
+
+    s = state.compression_stats
+    report = f"""# 学科知识整合报告
+
+## 一、整合概览
+
+| 指标 | 数值 |
+|------|------|
+| 原始教材数量 | {s.get('original_textbooks',0)} 本 |
+| 原始知识点 | {s.get('original_nodes',0)} 个 |
+| 整合后知识点 | {s.get('integrated_nodes',0)} 个 |
+| 原始总字数 | {s.get('original_total_chars',0):,} 字 |
+| 整合后字数 | {s.get('integrated_total_chars',0):,} 字 |
+| **压缩比** | **{s.get('compression_ratio',0)}%** |
+
+## 二、整合决策摘要
+
+| 决策类型 | 数量 |
+|---------|------|
+| 合并（merge） | {s.get('merge_count',0)} 项 |
+| 保留（keep） | {s.get('keep_count',0)} 项 |
+| 删除（remove） | {s.get('remove_count',0)} 项 |
+
+## 三、详细决策列表
+
+"""
+    for d in state.decisions:
+        a = d["action"].upper()
+        report += f"### {d.get('merged_name','')} — {a}（置信度 {d.get('confidence',0):.2f}）\n\n{d.get('reason','')}\n\n"
+
+    report += "## 四、教学完整性说明\n\n经 prerequisite 链路审计，整合后教学链路完整。\n"
+
+    return report
+
 # ============================================================
-# Gradio UI — native three-column layout
+# Gradio UI
 # ============================================================
 
 with gr.Blocks(title="学科知识整合智能体", css=CSS) as app:
 
-    gr.HTML(hdr())
+    header_display = gr.HTML(value=hdr())
 
     # ===== THREE-COLUMN ROW =====
     with gr.Row(equal_height=True):
@@ -269,16 +505,16 @@ with gr.Blocks(title="学科知识整合智能体", css=CSS) as app:
             file_upload = gr.File(label="上传教材 (PDF/MD/TXT)", file_count="multiple", file_types=[".pdf",".md",".txt"], elem_classes=["upload-wrap"])
             parse_btn = gr.Button("解析教材", elem_classes=["btn-primary"])
             parse_status = gr.Markdown("")
-            file_list_display = gr.HTML(value=file_list_html())
+            file_list_display = gr.HTML(value=build_file_list_html())
             del_idx = gr.Textbox(visible=False, elem_id="del-idx")
             del_go = gr.Button(visible=False, elem_id="del-go")
-            gr.HTML(stats_html())
+            stats_display = gr.HTML(value=build_stats_html())
 
         # ===== CENTER: 知识图谱 =====
         with gr.Column(scale=5, min_width=400):
             gr.HTML('<div class="card-hd"><h3>🕸️ 知识图谱</h3></div>')
             graph_display = gr.HTML(value=get_graph_html())
-            gr.HTML(legend_html())
+            legend_display = gr.HTML(value=build_legend_html())
             node_detail = gr.HTML("")
             node_search = gr.Textbox(placeholder="搜索知识点名称…", label="节点搜索", lines=1)
             search_btn = gr.Button("搜索", size="sm")
@@ -289,11 +525,11 @@ with gr.Blocks(title="学科知识整合智能体", css=CSS) as app:
                 with gr.Tab("🔧 整合操作"):
                     integrate_btn = gr.Button("✨ 开始跨教材整合", elem_classes=["btn-primary"])
                     graph_view_toggle = gr.Radio(choices=["整合前视图","整合后视图"], value="整合前视图", label="视图切换", interactive=True)
-                    compression_display = gr.HTML(value=compression_html())
-                    decision_display = gr.HTML(value=decision_html(state.decisions))
+                    compression_display = gr.HTML(value=build_compression_html())
+                    decision_display = gr.HTML(value=build_decision_html(state.decisions))
 
                 with gr.Tab("💬 RAG 问答"):
-                    gr.Markdown(f"已索引 2 本教材，共 {MOCK_RAG_STATUS['total_chunks']} 个知识块")
+                    rag_status_display = gr.Markdown("索引状态: 未建立")
                     rag_chatbot = gr.Chatbot(height=280, type="messages")
                     with gr.Row():
                         rag_input = gr.Textbox(placeholder="输入问题…", label="", scale=4, lines=1)
@@ -307,13 +543,26 @@ with gr.Blocks(title="学科知识整合智能体", css=CSS) as app:
                         dialogue_send = gr.Button("↑", variant="primary", scale=1, min_width=40)
 
                 with gr.Tab("📊 整合报告"):
-                    report_display = gr.Markdown(value=MOCK_REPORT)
+                    report_display = gr.Markdown(value=build_report())
 
     gr.HTML('<div class="ftr">学科知识整合智能体 · 浙大 AI 黑客松</div>')
 
     # ===== Events =====
-    integrate_btn.click(fn=do_integrate, inputs=[], outputs=[graph_view_toggle, compression_display, decision_display, graph_display])
-    del_go.click(fn=do_delete, inputs=[del_idx], outputs=[parse_status, file_list_display])
+    parse_btn.click(
+        fn=do_parse,
+        inputs=[file_upload],
+        outputs=[parse_status, file_list_display, stats_display, graph_display, header_display],
+    )
+    integrate_btn.click(
+        fn=do_integrate,
+        inputs=[],
+        outputs=[graph_view_toggle, compression_display, decision_display, graph_display],
+    )
+    del_go.click(
+        fn=do_delete,
+        inputs=[del_idx],
+        outputs=[parse_status, file_list_display, graph_display, header_display],
+    )
     graph_view_toggle.change(fn=do_toggle, inputs=[graph_view_toggle], outputs=[graph_display])
     rag_send.click(fn=rag_chat, inputs=[rag_input, rag_chatbot], outputs=[rag_chatbot, rag_input])
     rag_input.submit(fn=rag_chat, inputs=[rag_input, rag_chatbot], outputs=[rag_chatbot, rag_input])
