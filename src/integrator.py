@@ -89,6 +89,30 @@ def level2_embedding_match(all_nodes: list[dict], used_ids: set[str]) -> list[di
             if not nodes_a or not nodes_b:
                 continue
 
+            try:
+                pairs = find_similar_pairs(nodes_a, nodes_b, threshold=EMBEDDING_SIMILARITY_THRESHOLD)
+            except Exception:
+                print("  [L2] Embedding model unavailable, skipping")
+                return decisions
+    by_textbook = {}
+    for node in all_nodes:
+        if node["id"] in used_ids:
+            continue
+        tb = node["textbook"]
+        if tb not in by_textbook:
+            by_textbook[tb] = []
+        by_textbook[tb].append(node)
+
+    textbooks = list(by_textbook.keys())
+
+    for i in range(len(textbooks)):
+        for j in range(i + 1, len(textbooks)):
+            nodes_a = by_textbook[textbooks[i]]
+            nodes_b = by_textbook[textbooks[j]]
+
+            if not nodes_a or not nodes_b:
+                continue
+
             pairs = find_similar_pairs(nodes_a, nodes_b, threshold=EMBEDDING_SIMILARITY_THRESHOLD)
 
             for idx_a, idx_b, sim in pairs:

@@ -1,31 +1,27 @@
-"""LLM client wrapper for MiniMax M2.7 API (Anthropic-compatible)."""
+"""LLM client wrapper — supports OpenAI-compatible APIs (Zhipu GLM, MiniMax, etc.)."""
 
 import json
-from anthropic import Anthropic
+from openai import OpenAI
 from src.config import MINIMAX_API_KEY, MINIMAX_BASE_URL, MINIMAX_MODEL
 
 
 def get_client():
-    return Anthropic(api_key=MINIMAX_API_KEY, base_url=MINIMAX_BASE_URL)
+    return OpenAI(api_key=MINIMAX_API_KEY, base_url=MINIMAX_BASE_URL)
 
 
 def call_llm(system_prompt: str, user_prompt: str, max_tokens: int = 4096, temperature: float = 0.3) -> str:
-    """Call MiniMax M2.7 via Anthropic SDK and return text response."""
+    """Call LLM via OpenAI-compatible API and return text response."""
     client = get_client()
-    response = client.messages.create(
+    response = client.chat.completions.create(
         model=MINIMAX_MODEL,
         max_tokens=max_tokens,
         temperature=temperature,
-        system=system_prompt,
-        messages=[{"role": "user", "content": user_prompt}],
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
     )
-
-    # Extract text from response content blocks
-    for block in response.content:
-        if hasattr(block, "text"):
-            return block.text
-
-    return str(response.content)
+    return response.choices[0].message.content
 
 
 def call_llm_json(system_prompt: str, user_prompt: str, max_tokens: int = 4096) -> dict | list | None:

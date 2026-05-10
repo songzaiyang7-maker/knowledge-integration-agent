@@ -7,7 +7,11 @@ import threading
 import http.server
 import functools
 import traceback
+import pickle
 import gradio as gr
+
+CACHE_DIR = os.path.join(os.path.dirname(__file__), "cache")
+FAISS_DIR = os.path.join(CACHE_DIR, "faiss_index")
 
 from src.mock_data import (
     MOCK_NODES, MOCK_EDGES, MOCK_DECISIONS,
@@ -142,6 +146,29 @@ class AppState:
         self.file_list = []  # Empty initially, will be populated by parse
 
 state = AppState()
+
+# ============================================================
+# Load cache IMMEDIATELY at import time (before UI construction)
+# ============================================================
+def _preload_cache():
+    cache_path = os.path.join(CACHE_DIR, "cache_data.json")
+    if not os.path.exists(cache_path):
+        return
+    try:
+        with open(cache_path, "r", encoding="utf-8") as f:
+            cache_data = json.load(f)
+        state.mode = "real"
+        state.extraction_results = cache_data.get("extraction_results", [])
+        state.all_nodes = cache_data.get("all_nodes", [])
+        state.all_edges = cache_data.get("all_edges", [])
+        state.book_colors = cache_data.get("book_colors", {})
+        state.file_list = cache_data.get("file_list", [])
+        state.compression_stats = cache_data.get("compression_stats", MOCK_COMPRESSION_STATS)
+        print(f"Cache pre-loaded: {len(state.all_nodes)} nodes, {len(state.file_list)} textbooks")
+    except Exception as e:
+        print(f"Cache pre-load failed: {e}")
+
+_preload_cache()
 
 # ============================================================
 # HTML Builders
@@ -489,6 +516,81 @@ def build_report():
     return report
 
 # ============================================================
+# Cache Management
+# ============================================================
+
+def load_cache():
+    """Load pre-built cache if available. Returns True if cache was loaded."""
+    cache_path = os.path.join(CACHE_DIR, "cache_data.json")
+    faiss_index_path = os.path.join(FAISS_DIR, "index.pkl")
+
+    if not os.path.exists(cache_path):
+        return False
+
+    try:
+        print("Loading cache...")
+        with open(cache_path, "r", encoding="utf-8") as f:
+            cache_data = json.load(f)
+
+        state.mode = "real"
+        state.parsed_textbooks = cache_data.get("parsed_textbooks", [])
+        state.extraction_results = cache_data.get("extraction_results", [])
+        state.all_nodes = cache_data.get("all_nodes", [])
+        state.all_edges = cache_data.get("all_edges", [])
+        state.book_colors = cache_data.get("book_colors", {})
+        state.file_list = cache_data.get("file_list", [])
+        state.compression_stats = cache_data.get("compression_stats", MOCK_COMPRESSION_STATS)
+
+        # Load FAISS index
+        if os.path.exists(faiss_index_path):
+            with open(faiss_index_path, "rb") as f:
+                state.rag = pickle.load(f)
+            print(f"  RAG index loaded: {state.rag.indexed if hasattr(state.rag, 'indexed') else 'unknown'}")
+        else:
+            # Rebuild RAG if index not found
+            from src.rag_pipeline import RAGPipeline
+            state.rag = RAGPipeline()
+            for parsed in state.parsed_textbooks:
+                state.rag.add_textbook(parsed)
+            state.rag.build_index()
+
+        print(f"Cache loaded: {len(state.parsed_textbooks)} textbooks, {len(state.all_nodes)} nodes")
+        return True
+
+    except Exception as e:
+        print(f"Cache load failed: {e}")
+        traceback.print_exc()
+        return False
+
+
+def save_cache():
+    """Save current state to cache."""
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    os.makedirs(FAISS_DIR, exist_ok=True)
+
+    cache_data = {
+        "parsed_textbooks": state.parsed_textbooks,
+        "extraction_results": state.extraction_results,
+        "all_nodes": state.all_nodes,
+        "all_edges": state.all_edges,
+        "book_colors": state.book_colors,
+        "file_list": state.file_list,
+        "compression_stats": state.compression_stats,
+    }
+
+    cache_path = os.path.join(CACHE_DIR, "cache_data.json")
+    with open(cache_path, "w", encoding="utf-8") as f:
+        json.dump(cache_data, f, ensure_ascii=False, indent=2)
+
+    if state.rag is not None:
+        faiss_index_path = os.path.join(FAISS_DIR, "index.pkl")
+        with open(faiss_index_path, "wb") as f:
+            pickle.dump(state.rag, f)
+
+    print(f"Cache saved to {cache_path}")
+
+
+# ============================================================
 # Auto-load textbooks
 # ============================================================
 
@@ -565,7 +667,14 @@ def auto_load_textbooks():
 
 
 def on_app_load():
-    """Refresh UI after data is loaded."""
+    """Refresh UI after data is loaded. Tries cache first, then auto-load."""
+    # Try loading cache first
+    if load_cache():
+        print("Using cached data")
+    else:
+        # Fall back to auto-loading (this is the slow path)
+        print("No cache found, auto-loading textbooks...")
+        auto_load_textbooks()
     return (
         hdr(),
         build_file_list_html(),
@@ -668,8 +777,10 @@ if __name__ == "__main__":
     os.environ["NO_PROXY"] = "localhost,127.0.0.1"
     os.environ["no_proxy"] = "localhost,127.0.0.1"
 
-    # Pre-load textbooks before launching server
-    print("Pre-loading textbooks from Desktop/textbooks...")
-    auto_load_textbooks()
+    # Load cache BEFORE launching server — instant startup if cache exists
+    if load_cache():
+        print("Pre-loaded from cache — ready to serve")
+    else:
+        print("No cache found. Run 'python cache_builder.py' first to pre-build cache.")
 
     app.launch(server_name="127.0.0.1", server_port=7860)

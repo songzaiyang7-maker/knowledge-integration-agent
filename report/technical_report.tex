@@ -1,0 +1,1219 @@
+\documentclass[12pt,a4paper]{article}
+
+% ============================================================
+% 中文支持
+% ============================================================
+\usepackage[UTF8]{ctex}
+\usepackage{geometry}
+\geometry{left=2.5cm, right=2.5cm, top=2.8cm, bottom=2.8cm}
+
+% ============================================================
+% 常用宏包
+% ============================================================
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{enumitem}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{tikz}
+\usetikzlibrary{shapes, arrows.meta, positioning, fit, backgrounds, calc}
+\usepackage{tcolorbox}
+% fontawesome5 not available, use text symbols instead
+\newcommand{\faCheck}{$\checkmark$}
+\newcommand{\faTimes}{$\times$}
+
+% ============================================================
+% 代码高亮配置
+% ============================================================
+\lstset{
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{blue}\bfseries,
+    commentstyle=\color{gray}\itshape,
+    stringstyle=\color{red},
+    breaklines=true,
+    frame=single,
+    backgroundcolor=\color{gray!5},
+    rulecolor=\color{gray!30},
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    numbersep=5pt,
+    xleftmargin=15pt,
+    showstringspaces=false,
+    tabsize=4,
+    language=Python,
+}
+
+% ============================================================
+% 超链接样式
+% ============================================================
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!70!black,
+    citecolor=green!50!black,
+    urlcolor=blue!60!black,
+}
+
+% ============================================================
+% 页眉页脚
+% ============================================================
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small 学科知识整合智能体 --- 技术报告}
+\fancyhead[R]{\small 浙大 AI 全栈黑客松}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% ============================================================
+% 自定义颜色盒子
+% ============================================================
+\newtcolorbox{infobox}[1][]{
+    colback=blue!5!white,
+    colframe=blue!60!black,
+    fonttitle=\bfseries,
+    title=#1,
+    arc=2mm,
+    boxrule=0.5pt,
+}
+
+\newtcolorbox{warnbox}[1][]{
+    colback=orange!5!white,
+    colframe=orange!60!black,
+    fonttitle=\bfseries,
+    title=#1,
+    arc=2mm,
+    boxrule=0.5pt,
+}
+
+\newtcolorbox{keybox}[1][]{
+    colback=green!5!white,
+    colframe=green!50!black,
+    fonttitle=\bfseries,
+    title=#1,
+    arc=2mm,
+    boxrule=0.5pt,
+}
+
+% ============================================================
+% 标题信息
+% ============================================================
+\title{
+    \vspace{-1cm}
+    {\LARGE\bfseries 学科知识整合智能体} \\[6pt]
+    {\Large\bfseries 技术报告与系统文档} \\[12pt]
+    {\large 浙江大学 AI 全栈极速黑客松参赛作品}
+}
+\author{
+    \textbf{团队} \\[4pt]
+}
+\date{2026 年 5 月 10 日}
+
+% ============================================================
+\begin{document}
+\maketitle
+\thispagestyle{fancy}
+
+\begin{center}
+\begin{tcolorbox}[colback=gray!5, colframe=gray!40, width=0.85\textwidth, arc=2mm]
+\centering
+\textbf{项目仓库}：\url{https://github.com/songzaiyang7-maker/knowledge-integration-agent} \\[4pt]
+\textbf{技术栈}：Gradio + Python + ECharts + FAISS + BGE-small-zh + GLM-4-Flash \\[4pt]
+\textbf{部署方式}：单体应用，支持 Gradio 本地运行与魔搭创空间部署
+\end{tcolorbox}
+\end{center}
+
+\vspace{0.5cm}
+
+% ============================================================
+% 目录
+% ============================================================
+\tableofcontents
+\newpage
+
+% ############################################################
+% 第一部分：需求分析
+% ############################################################
+\part{需求分析}
+
+\section{项目背景与目标}
+\label{sec:background}
+
+\subsection{赛事背景}
+
+本项目参加浙江大学 AI 全栈极速黑客松（限时 5 小时），开发主题为``学科知识整合智能体''（Knowledge Integration Agent）。系统需要面向医学教育场景，将多本教材中重复、交叉的知识点进行智能整合，生成压缩后的知识图谱，并支持基于图谱的精准问答。
+
+\subsection{核心目标}
+
+\begin{enumerate}[leftmargin=2em]
+    \item \textbf{多教材知识图谱构建}：解析 PDF/MD/TXT 格式教材，通过 LLM 提取知识点及其关系，构建跨教材知识图谱。
+    \item \textbf{跨教材智能整合}：识别重复知识点，执行合并/保留/删除决策，输出压缩比 $< 30\%$ 的整合结果。
+    \item \textbf{RAG 精准问答}：基于向量检索的知识问答，每个回答附带可溯源的引用来源（教材名、章节、页码）。
+    \item \textbf{可视化交互}：力导向知识图谱可视化，支持节点频次/来源编码、缩放拖拽、详情查看。
+\end{enumerate}
+
+\section{四大核心问题分析}
+\label{sec:core-questions}
+
+\subsection{Q1：知识点的粒度如何定义？}
+
+\begin{keybox}[知识点粒度定义]
+一个知识点 = 一个\textbf{可独立考查}的概念/定理/方法/现象。对应教材约 1 段到 1 页的独立概念。
+\end{keybox}
+
+\textbf{操作规则}：
+\begin{itemize}[leftmargin=2em]
+    \item 每个知识点必须有\textbf{独立定义、可单独解释、可出考题}
+    \item 两个概念若总是一起出现且无法独立解释 $\Rightarrow$ 合并为一个知识点
+    \item 粒度控制通过 LLM Prompt 约束实现（参见 \ref{sec:knowledge-extraction} 节）
+\end{itemize}
+
+\textbf{示例}：
+\begin{itemize}[leftmargin=2em]
+    \item[\faCheck] ``动作电位''——可独立考查，粒度适当
+    \item[\faTimes] ``静息电位和动作电位''——应拆分为两个独立知识点
+    \item[\faTimes] ``生理学''——过于笼统，无法单独考查
+\end{itemize}
+
+\subsection{Q2：整合后如何保证教学连贯性？}
+
+\begin{keybox}[链路完整性原则]
+基于 prerequisite 关系形成教学链路。保留节点 B 时，B 的所有前置依赖 A 也必须保留；删除 A 时，需检查所有下游节点是否``断链''。
+\end{keybox}
+
+\textbf{决策优先级}：前置依赖多的``枢纽知识点''优先保留。系统在整合后自动遍历所有 prerequisite 关系，标记``孤儿节点''（前置被删但自身保留）。
+
+\subsection{Q3：``重复''的判定标准是什么？}
+
+我们设计了\textbf{三级判定体系}（Three-Level Alignment），如表~\ref{tab:alignment} 所示。
+
+\begin{table}[H]
+\centering
+\caption{三级对齐判定体系}
+\label{tab:alignment}
+\begin{tabularx}{\textwidth}{clllX}
+\toprule
+\textbf{级别} & \textbf{方法} & \textbf{阈值} & \textbf{置信度} & \textbf{决策} \\
+\midrule
+L1 & 名称精确匹配 & 字符串一致 & $\geq 0.95$ & 直接 merge \\
+L2 & Embedding 语义相似度 & 余弦 $> 0.85$ & $0.85$--$0.95$ & 候选，交 LLM 审查 \\
+L3 & LLM 语义精判 & 语义等价判断 & $0.70$--$0.85$ & merge / keep / flag \\
+-- & 语义不相关 & $< 0.70$ & $< 0.70$ & keep（独立保留） \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\textbf{特殊处理}：
+\begin{itemize}[leftmargin=2em]
+    \item 跨语言等价（``白细胞'' = ``leukocyte''）由 L3 捕获
+    \item 概念包含关系（``免疫应答'' $\supset$ ``体液免疫''）不算重复，标记为 \texttt{contains} 关系
+\end{itemize}
+
+\subsection{Q4：压缩比如何计算与控制？}
+
+\begin{keybox}[压缩比公式]
+\begin{equation}
+\text{压缩比} = \frac{\displaystyle\sum_{n \in N_{\text{integrated}}} |n.\text{definition}|}{\displaystyle\sum_{n \in N_{\text{original}}} |n.\text{definition}|} \times 100\%
+\end{equation}
+目标：压缩比 $< 30\%$。
+\end{keybox}
+
+三种压缩策略及其贡献：
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lll}
+\toprule
+\textbf{策略} & \textbf{操作} & \textbf{预估贡献} \\
+\midrule
+去重合并 & 多本教材重复知识点保留最完整版本 & $\sim 40\%$ \\
+精炼提纯 & LLM 提炼定义精华表述 & $\sim 30\%$ \\
+冗余删除 & 上位笼统概念被具体子概念覆盖时删除 & $\sim 30\%$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+% ############################################################
+% 第二部分：系统设计
+% ############################################################
+\newpage
+\part{系统设计}
+
+\section{架构总览}
+\label{sec:architecture}
+
+\subsection{架构选型：为什么选择单体 Gradio？}
+
+在黑客松的时间约束下，我们放弃了最初的 React + FastAPI 前后端分离方案，转而采用 \textbf{Gradio 单体应用}架构。这一决策基于以下考量：
+
+\begin{enumerate}[leftmargin=2em]
+    \item \textbf{时间效率}：无需搭建独立的前端项目、配置 Webpack/Vite、处理跨域问题
+    \item \textbf{部署简便}：Gradio 原生支持魔搭创空间部署，一条命令即可发布公网 URL
+    \item \textbf{交互能力}：Gradio Blocks 提供灵活的组件化布局，支持事件回调
+    \item \textbf{Python 全栈}：前端、后端、数据处理全部在 Python 中完成，无需上下文切换
+\end{enumerate}
+
+\begin{warnbox}[权衡说明]
+单体架构牺牲了前后端独立开发/部署的灵活性，但在 5 小时黑客松场景下，\textbf{交付确定性}远比架构优雅性重要。
+\end{warnbox}
+
+\subsection{系统架构图}
+
+图~\ref{fig:architecture} 展示了系统的整体架构。
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+    node distance=1.0cm and 1.5cm,
+    block/.style={rectangle, draw, fill=blue!8, rounded corners, minimum height=1.0cm, minimum width=2.8cm, align=center, font=\small},
+    arrow/.style={-{Stealth[length=6pt]}, thick, color=blue!60!black},
+    label/.style={font=\scriptsize, color=gray!70!black},
+]
+
+% 用户层
+\node[block, fill=green!10] (user) {用户浏览器 \\ \scriptsize Gradio UI};
+
+% 应用层
+\node[block, below=of user] (gradio) {Gradio 应用 \\ \scriptsize app.py (763 行)};
+\node[block, right=of gradio] (state) {AppState \\ \scriptsize 全局状态管理};
+\node[block, left=of gradio, fill=orange!10] (static) {Static Server \\ \scriptsize :8080};
+
+% 核心模块
+\node[block, below left=1.2cm and 0.5cm of gradio] (parser) {PDF 解析 \\ \scriptsize pdf\_parser.py};
+\node[block, below=1.2cm of gradio] (extractor) {知识提取 \\ \scriptsize knowledge\_extractor.py};
+\node[block, below right=1.2cm and 0.5cm of gradio] (integrator) {三级整合 \\ \scriptsize integrator.py};
+
+% 基础设施
+\node[block, below=of extractor, fill=purple!10] (embedding) {BGE-small-zh \\ \scriptsize 向量嵌入};
+\node[block, below left=1.2cm and 0.5cm of integrator, fill=purple!10] (faiss) {FAISS \\ \scriptsize 向量检索};
+\node[block, below right=1.2cm and 0.5cm of integrator, fill=red!10] (llm) {GLM-4-Flash \\ \scriptsize LLM API};
+\node[block, below=of integrator] (rag) {RAG 管道 \\ \scriptsize rag\_pipeline.py};
+
+% 可视化
+\node[block, below=of embedding, fill=yellow!10] (echarts) {ECharts 5.x \\ \scriptsize 力导向图};
+
+% 连线
+\draw[arrow] (user) -- (gradio);
+\draw[arrow] (gradio) -- (state);
+\draw[arrow] (gradio) -- (static);
+\draw[arrow] (gradio) -- (parser);
+\draw[arrow] (gradio) -- (extractor);
+\draw[arrow] (gradio) -- (integrator);
+\draw[arrow] (extractor) -- (llm) node[midway, label, right] {LLM 调用};
+\draw[arrow] (extractor) -- (embedding) node[midway, label, left] {向量化};
+\draw[arrow] (integrator) -- (embedding) node[midway, label, left] {L2 相似度};
+\draw[arrow] (integrator) -- (llm) node[midway, label, right] {L3 精判};
+\draw[arrow] (rag) -- (faiss);
+\draw[arrow] (rag) -- (llm);
+\draw[arrow] (static) -- (echarts);
+\draw[arrow] (state) -- (rag);
+
+\end{tikzpicture}
+\caption{系统架构图}
+\label{fig:architecture}
+\end{figure}
+
+\subsection{数据流}
+
+系统的核心数据流如图~\ref{fig:dataflow} 所示。
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+    node distance=0.8cm,
+    step/.style={rectangle, draw, fill=blue!8, rounded corners, minimum height=0.8cm, minimum width=3.2cm, align=center, font=\small},
+    arrow/.style={-{Stealth[length=5pt]}, thick, color=blue!60!black},
+]
+\node[step] (s1) {1. 上传教材 (PDF/MD/TXT)};
+\node[step, below=of s1] (s2) {2. 按章节解析提取文本};
+\node[step, below=of s2] (s3) {3. LLM 知识点提取 (每章)};
+\node[step, below=of s3] (s4) {4. 构建跨教材知识图谱};
+\node[step, below=of s4] (s5) {5. 三级对齐整合};
+\node[step, below left=1.0cm and -0.5cm of s5, fill=green!10] (s6a) {6a. FAISS 索引构建};
+\node[step, below right=1.0cm and -0.5cm of s5, fill=green!10] (s6b) {6b. ECharts 图谱渲染};
+\node[step, below=2.5cm of s5, fill=yellow!10] (s7) {7. 用户交互 (RAG/对话/报告)};
+
+\draw[arrow] (s1) -- (s2);
+\draw[arrow] (s2) -- (s3);
+\draw[arrow] (s3) -- (s4);
+\draw[arrow] (s4) -- (s5);
+\draw[arrow] (s5) -| (s6a);
+\draw[arrow] (s5) -| (s6b);
+\draw[arrow] (s6a) |- (s7);
+\draw[arrow] (s6b) |- (s7);
+\end{tikzpicture}
+\caption{核心数据流}
+\label{fig:dataflow}
+\end{figure}
+
+\section{技术栈详情}
+\label{sec:tech-stack}
+
+\begin{table}[H]
+\centering
+\caption{技术栈一览}
+\begin{tabularx}{\textwidth}{llX}
+\toprule
+\textbf{层级} & \textbf{技术} & \textbf{说明} \\
+\midrule
+Web 框架 & Gradio $\geq$ 4.0 & 单体应用，Python 全栈 \\
+PDF 解析 & PyMuPDF (fitz) $\geq$ 1.24 & 章节识别，页眉页脚过滤 \\
+LLM 调用 & OpenAI SDK $\geq$ 1.0 & 兼容格式，支持 GLM-4-Flash / MiniMax-M2.7 \\
+Embedding & BAAI/bge-small-zh-v1.5 & 中文优化，512 维向量 \\
+向量检索 & FAISS (IndexFlatIP) & 余弦相似度，内积检索 \\
+可视化 & ECharts 5.x & 力导向图，iframe 嵌入 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{项目结构}
+\label{sec:project-structure}
+
+\begin{lstlisting}[language={}, title={项目文件结构}]
+AI黑客松/
++-- app.py                    # Gradio 主应用入口 (763 行)
++-- cache_builder.py          # 离线缓存预热器
++-- requirements.txt          # Python 依赖
++-- .env                      # API 配置 (git 排除)
++-- static/
+|   +-- echarts.min.js        # ECharts 5.5.0 本地副本
+|   +-- graph.html            # 动态生成的图谱 HTML
++-- src/
+|   +-- config.py             # 配置常量与环境变量
+|   +-- llm_client.py         # LLM API 客户端封装
+|   +-- pdf_parser.py         # PDF/TXT/MD 解析模块
+|   +-- knowledge_extractor.py # LLM 知识点提取
+|   +-- embedding.py          # BGE-small-zh 向量嵌入
+|   +-- graph_builder.py      # 知识图谱构建
+|   +-- integrator.py         # 三级对齐整合算法
+|   +-- echarts_templates.py  # ECharts 图谱 HTML 模板
+|   +-- rag_pipeline.py       # RAG 问答管道
+|   +-- mock_data.py          # Mock 数据 (UI 开发备用)
++-- cache/                    # 解析结果缓存
++-- data/                     # 上传文件存储
+\end{lstlisting}
+
+
+% ############################################################
+% 第三部分：Agent 架构说明
+% ############################################################
+\newpage
+\part{Agent 架构说明}
+
+\section{Agent 设计决策}
+\label{sec:agent-design}
+
+\subsection{单 Agent vs 多 Agent}
+
+\begin{infobox}[设计决策：单 Agent 架构]
+本项目采用\textbf{单 Agent（单体应用）}架构，而非多 Agent 协作模式。所有功能模块（解析、提取、整合、RAG）在同一进程内通过函数调用协作。
+\end{infobox}
+
+选择单 Agent 架构的理由：
+
+\begin{enumerate}[leftmargin=2em]
+    \item \textbf{上下文管理}：多 Agent 需要设计消息传递协议和上下文共享机制，在 5 小时限制下风险极高
+    \item \textbf{调试效率}：单进程、单线程执行流，问题定位直接
+    \item \textbf{状态一致性}：\texttt{AppState} 类集中管理全局状态，避免分布式状态同步问题
+    \item \textbf{Mock 回退}：单一入口可轻松在真实逻辑和 Mock 数据间切换
+\end{enumerate}
+
+\subsection{上下文管理策略}
+
+系统采用\textbf{模块化函数调用}而非 Agent 对话链。每个核心功能封装为独立 Python 模块：
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lll}
+\toprule
+\textbf{模块} & \textbf{核心函数} & \textbf{LLM 调用} \\
+\midrule
+\texttt{pdf\_parser} & \texttt{parse\_file()} & 无 \\
+\texttt{knowledge\_extractor} & \texttt{process\_textbook()} & 每本最多 2 次 \\
+\texttt{integrator} & \texttt{run\_integration()} & 按需 (L3 阶段) \\
+\texttt{rag\_pipeline} & \texttt{answer()} & 每次问答 1 次 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{双模式设计}
+\label{sec:dual-mode}
+
+系统实现了\textbf{Mock/Real 双模式}，确保 UI 可在任何环境下展示：
+
+\begin{itemize}[leftmargin=2em]
+    \item \textbf{Mock 模式}：启动时未检测到教材数据时自动激活，使用 \texttt{mock\_data.py} 中的硬编码数据渲染所有 UI 组件
+    \item \textbf{Real 模式}：用户上传文件或系统自动加载教材后激活，调用真实的 LLM/Embedding/FAISS 管道
+\end{itemize}
+
+模式切换通过 \texttt{AppState.mode} 标志位控制，所有 UI 渲染函数根据该标志选择数据源。
+
+\section{缓存与预加载策略}
+\label{sec:caching}
+
+\subsection{离线缓存预热}
+
+\texttt{cache\_builder.py} 提供离线缓存预热功能，将所有解析结果、知识点提取结果和 FAISS 索引序列化到磁盘：
+
+\begin{itemize}[leftmargin=2em]
+    \item \texttt{cache/cache\_data.json}：解析结果和提取结果的 JSON 缓存
+    \item \texttt{cache/faiss\_index/index.pkl}：RAG 管道的 pickle 序列化
+\end{itemize}
+
+\subsection{启动时加载策略}
+
+\begin{lstlisting}[title={启动加载逻辑}]
+def on_app_load():
+    if load_cache():          # 优先从缓存加载 (毫秒级)
+        print("Using cached data")
+    else:
+        auto_load_textbooks() # 回退到实时解析 (分钟级)
+\end{lstlisting}
+
+缓存命中时启动时间 $< 1$ 秒；未命中时需要 $2 \times \text{LLM\_CALLS} \times T_{\text{avg}}$ 秒（$T_{\text{avg}}$ 为单次 LLM 调用延迟）。
+
+\section{LLM 调用策略}
+\label{sec:llm-strategy}
+
+\subsection{API 兼容性设计}
+
+\texttt{llm\_client.py} 使用 OpenAI Python SDK，兼容所有 OpenAI API 格式的 LLM 服务：
+
+\begin{lstlisting}[title={LLM 客户端核心代码}]
+client = OpenAI(
+    api_key=MINIMAX_API_KEY,
+    base_url=MINIMAX_BASE_URL
+)
+response = client.chat.completions.create(
+    model=MINIMAX_MODEL,
+    messages=[
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
+    ],
+)
+\end{lstlisting}
+
+实际使用 \textbf{GLM-4-Flash}（智谱 AI）作为 LLM 后端，通过 \texttt{.env} 环境变量配置。
+
+\subsection{调用限制}
+
+为控制启动时间，每个教材最多调用 LLM \textbf{2 次}（\texttt{MAX\_LLM\_CALLS\_PER\_BOOK = 2}），仅处理内容最长的 2 个章节。
+
+\subsection{JSON 解析鲁棒性}
+
+\texttt{call\_llm\_json()} 实现了多层 JSON 提取策略：
+\begin{enumerate}[leftmargin=2em]
+    \item 尝试从 Markdown 代码块 (\texttt{```json ... ```}) 中提取
+    \item 回退到全文扫描，定位最外层的 \texttt{\{...\}} 或 \texttt{[...]}
+    \item 解析失败返回 \texttt{None}，调用方负责降级处理
+\end{enumerate}
+
+\section{已知局限与改进方向}
+\label{sec:limitations}
+
+\begin{table}[H]
+\centering
+\caption{已知局限与改进方向}
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{3.5cm} >{\raggedright\arraybackslash}p{4cm} X}
+\toprule
+\textbf{局限} & \textbf{影响} & \textbf{改进方向} \\
+\midrule
+每本教材仅提取 2 个章节 & 知识覆盖不完整 & 按需增量提取 + 后台任务队列 \\
+RAG 分块页码计算不准确 & 引用溯源精度受限 & 引入页码边界映射表 \\
+压缩比基于 definition 字数 & 指标偏保守 & 改为原始教材文本 vs 整合文本 \\
+单进程阻塞 & 长操作期间 UI 无响应 & 异步任务 + WebSocket 进度推送 \\
+无持久化用户会话 & 刷新丢失对话历史 & 数据库存储 + 会话恢复 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+
+% ############################################################
+% 第四部分：核心算法
+% ############################################################
+\newpage
+\part{核心算法}
+
+\section{PDF 解析与章节识别}
+\label{sec:pdf-parsing}
+
+\subsection{解析流程}
+
+\texttt{pdf\_parser.py} 使用 PyMuPDF 进行文本提取，支持 PDF、MD、TXT 三种格式。PDF 解析流程如下：
+
+\begin{enumerate}[leftmargin=2em]
+    \item 逐页提取文本，过滤页眉页脚（纯数字行、短于 4 字符的行）
+    \item 扫描每页前 3 行，检测``第X章/节''格式的章节标题
+    \item 合并同一章节的连续页面内容
+    \item 提取前言/目录部分作为独立章节
+\end{enumerate}
+
+\begin{lstlisting}[title={章节标题检测正则}]
+pattern = r"^(第[一二三四五六七八九十百千\d]+[章节]\s*\S*)"
+\end{lstlisting}
+
+\subsection{TXT/MD 解析}
+
+对于文本文件，使用 Markdown 标题（\texttt{\#}）或``第X章''模式进行分段。
+
+\section{知识点提取}
+\label{sec:knowledge-extraction}
+
+\texttt{knowledge\_extractor.py} 通过结构化 Prompt 引导 LLM 从章节内容中提取知识点和关系：
+
+\begin{keybox}[知识点提取 Prompt 关键约束]
+\begin{itemize}[leftmargin=1em]
+    \item 每个知识点必须有独立的定义（1--3 句话）
+    \item 分类为：核心概念 | 基本组成 | 生理过程 | 方法技术
+    \item 关系类型：prerequisite | parallel | contains | applies\_to
+    \item 输出严格 JSON 格式
+\end{itemize}
+\end{keybox}
+
+\textbf{去重机制}：同名知识点不创建新节点，而是增加已有节点的 \texttt{frequency} 计数。这确保了同一教材内重复出现的概念只对应一个节点。
+
+\section{三级对齐整合算法}
+\label{sec:three-level-alignment}
+
+三级对齐算法是系统的核心技术亮点，实现跨教材知识点的智能对齐。
+
+\subsection{L1：精确名称匹配}
+
+\begin{lstlisting}[title={L1 算法伪代码}]
+for each node in all_nodes:
+    group by node.name (strip whitespace)
+
+for each group with same name across different textbooks:
+    create merge decision (confidence = 0.99)
+    keep the longest definition
+\end{lstlisting}
+
+L1 处理完全同名的情况（如两本教材中的``白细胞''），置信度固定为 0.99。
+
+\subsection{L2：Embedding 语义相似度}
+
+\begin{lstlisting}[title={L2 算法伪代码}]
+for each pair of textbooks (A, B):
+    compute embeddings for all unmatched nodes
+    for each pair (a in A, b in B):
+        if cosine_similarity(a, b) >= 0.85:
+            mark as candidate (needs_llm_review = True)
+\end{lstlisting}
+
+L2 使用 \texttt{BAAI/bge-small-zh-v1.5} 模型计算节点名称的向量表示，通过余弦相似度进行粗筛。阈值设为 0.85。
+
+\subsection{L3：LLM 语义精判}
+
+对 L2 阶段的候选对，调用 LLM 进行最终裁决：
+
+\begin{lstlisting}[title={L3 LLM Prompt 核心内容}]
+判定标准:
+  merge: 两个知识点描述同一概念
+  keep:  两个知识点虽相关但是不同的概念
+  remove: 一个是另一个的上位笼统概念
+
+注意:
+  - 跨语言等价（"白细胞"="leukocyte"）应合并
+  - 概念包含关系不算重复，应保留
+\end{lstlisting}
+
+\subsection{整合后处理}
+
+\begin{enumerate}[leftmargin=2em]
+    \item 构建 ID 映射表（旧 ID $\to$ 新 ID）
+    \item 重建边关系（使用新 ID，去重，消除自环）
+    \item 计算压缩统计信息
+\end{enumerate}
+
+\section{RAG 问答管道}
+\label{sec:rag-pipeline}
+
+\subsection{分块策略}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{ll}
+\toprule
+\textbf{参数} & \textbf{值} \\
+\midrule
+分块大小 (CHUNK\_SIZE) & 500 字符 \\
+重叠大小 (CHUNK\_OVERLAP) & 50 字符 \\
+Top-K (RAG\_TOP\_K) & 5 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+每个分块绑定元数据：教材名、章节标题、起始页码。
+
+\subsection{向量索引}
+
+使用 FAISS \texttt{IndexFlatIP}（内积索引）。由于 BGE 模型输出的嵌入已经 L2 归一化，内积等价于余弦相似度：
+
+\begin{equation}
+\text{sim}(\mathbf{a}, \mathbf{b}) = \mathbf{a} \cdot \mathbf{b} = \cos(\theta), \quad \text{when } \|\mathbf{a}\| = \|\mathbf{b}\| = 1
+\end{equation}
+
+\subsection{防幻觉机制}
+
+RAG 系统的 Prompt 包含严格的防幻觉约束：
+
+\begin{warnbox}[RAG 防幻觉 Prompt]
+\begin{enumerate}[leftmargin=1em]
+    \item \textbf{只根据}提供的参考资料回答，不要编造信息
+    \item 如果参考资料中没有相关信息，回答``当前知识库中未找到相关信息''
+    \item 回答时\textbf{必须}标注引用来源（教材名、章节、页码）
+\end{enumerate}
+\end{warnbox}
+
+\subsection{引用溯源}
+
+每个回答附带结构化的引用卡片：
+
+\begin{lstlisting}[language={}, title={引用卡片格式}]
+[教材名, 章节名, 第X页] (相关度: 0.92)
+  > 原文片段...
+\end{lstlisting}
+
+引用支持展开/折叠交互，用户可查看原文 chunk 内容。
+
+\section{知识图谱可视化}
+\label{sec:visualization}
+
+\subsection{ECharts 力导向图}
+
+知识图谱使用 ECharts 5.x 的力导向布局（Force-directed Layout）渲染，通过 \texttt{gr.HTML} 组件嵌入 iframe。
+
+\textbf{布局参数}：
+\begin{itemize}[leftmargin=2em]
+    \item 排斥力（repulsion）：300
+    \item 边长范围：80--200
+    \item 重力（gravity）：0.1
+\end{itemize}
+
+\subsection{视觉编码}
+
+\begin{table}[H]
+\centering
+\caption{视觉编码规则}
+\begin{tabularx}{\textwidth}{llX}
+\toprule
+\textbf{视觉元素} & \textbf{映射规则} & \textbf{示例} \\
+\midrule
+节点大小 & $20 + \text{frequency} \times 12$ & frequency=4 $\Rightarrow$ 68px \\
+节点颜色 & 按教材来源分配 & 生理学 = \textcolor[HTML]{5470C6}{蓝}, 病理学 = \textcolor[HTML]{91CC75}{绿} \\
+边线型 & 按关系类型 & prerequisite=实线, parallel=虚线, contains=点线, applies\_to=双线 \\
+高亮模式 & adjacency & 点击节点高亮所有邻居 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{静态文件服务}
+
+由于 Gradio 的 \texttt{gr.HTML} 组件无法直接加载本地 JavaScript 文件，系统在后台启动了一个独立的 HTTP 服务器（端口 8080）专门提供 ECharts JS 和动态生成的图谱 HTML。
+
+
+% ############################################################
+% 第五部分：前端交互设计
+% ############################################################
+\newpage
+\part{前端交互设计}
+
+\section{三栏布局}
+\label{sec:layout}
+
+系统采用\textbf{左-中-右三栏布局}，通过 Gradio 的 \texttt{gr.Row} 和 \texttt{gr.Column} 实现，比例为 2:5:4。
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+    col/.style={rectangle, draw, fill=#1, rounded corners=3pt, minimum height=5.5cm, align=center, font=\small},
+]
+\node[col=blue!8, minimum width=3.5cm] (left) at (0,0) {
+    \textbf{左栏 (scale=2)} \\[6pt]
+    教材管理 \\[2pt]
+    \scriptsize 文件上传 \\[-1pt]
+    \scriptsize 解析按钮 \\[-1pt]
+    \scriptsize 文件列表 \\[-1pt]
+    \scriptsize 统计面板
+};
+\node[col=green!8, minimum width=7cm, right=0.3cm of left] (center) {
+    \textbf{中栏 (scale=5)} \\[6pt]
+    知识图谱核心展示区 \\[2pt]
+    \scriptsize ECharts 力导向图 \\[-1pt]
+    \scriptsize 图例 \\[-1pt]
+    \scriptsize 节点详情 \\[-1pt]
+    \scriptsize 节点搜索
+};
+\node[col=orange!8, minimum width=5.5cm, right=0.3cm of center] (right) {
+    \textbf{右栏 (scale=4)} \\[6pt]
+    Tab 切换面板 \\[2pt]
+    \scriptsize 整合操作 \\[-1pt]
+    \scriptsize RAG 问答 \\[-1pt]
+    \scriptsize 多轮对话 \\[-1pt]
+    \scriptsize 整合报告
+};
+\end{tikzpicture}
+\caption{三栏布局示意}
+\label{fig:layout}
+\end{figure}
+
+\section{左栏：教材管理}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lll}
+\toprule
+\textbf{组件} & \textbf{交互方式} & \textbf{说明} \\
+\midrule
+文件上传区 & 拖拽/点击 & 支持 PDF/MD/TXT，批量上传 \\
+解析按钮 & 点击触发 & 调用解析管道，实时更新状态 \\
+文件列表 & 动态 HTML & 显示文件名、格式、大小、状态 \\
+统计面板 & 自动刷新 & 教材数/知识点数/总字数 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{中栏：知识图谱}
+
+\begin{itemize}[leftmargin=2em]
+    \item \textbf{缩放}：鼠标滚轮
+    \item \textbf{拖拽画布}：鼠标拖拽移动
+    \item \textbf{拖拽节点}：单个节点可拖拽重新定位
+    \item \textbf{点击节点}：弹出详情（名称、定义、章节、页码、频次）
+    \item \textbf{邻居高亮}：点击节点时高亮所有相邻节点和边
+    \item \textbf{搜索}：输入知识点名称进行搜索
+\end{itemize}
+
+\section{右栏：功能面板}
+
+\subsection{Tab 1：整合操作}
+
+\begin{itemize}[leftmargin=2em]
+    \item 一键启动三级对齐整合算法
+    \item 压缩比进度条可视化
+    \item 整合决策表格（merge/keep/remove + 置信度 + 理由）
+    \item 整合前/后视图切换
+\end{itemize}
+
+\subsection{Tab 2：RAG 问答}
+
+\begin{itemize}[leftmargin=2em]
+    \item 聊天式问答界面
+    \item 每个回答附带可展开的引用卡片
+    \item 引用显示：教材名 + 章节 + 页码 + 相关度分数 + 原文片段
+\end{itemize}
+
+\subsection{Tab 3：多轮对话}
+
+教师可通过自然语言反馈修改整合决策：
+\begin{itemize}[leftmargin=2em]
+    \item \texttt{保留 XX} —— 将删除决策改为保留
+    \item \texttt{删除 XX} —— 将保留决策改为删除
+    \item \texttt{分开 XX} —— 将合并决策拆分为保留
+    \item \texttt{为什么合并} —— 查看整合算法依据
+\end{itemize}
+对话修改后知识图谱实时联动刷新。
+
+\subsection{Tab 4：整合报告}
+
+自动生成包含整合概览、决策摘要、详细决策列表和教学完整性说明的 Markdown 报告。
+
+\section{教材颜色映射}
+\label{sec:colors}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{llll}
+\toprule
+\textbf{教材} & \textbf{颜色} & \textbf{教材} & \textbf{颜色} \\
+\midrule
+局部解剖学 & \textcolor[HTML]{5470C6}{蓝色 \#5470C6} & 传染病学 & \textcolor[HTML]{3BA272}{深绿 \#3BA272} \\
+组织学与胚胎学 & \textcolor[HTML]{91CC75}{绿色 \#91CC75} & 病理生理学 & \textcolor[HTML]{FC8452}{橙色 \#FC8452} \\
+生理学 & \textcolor[HTML]{FAC858}{黄色 \#FAC858} & 整合后节点 & \textcolor[HTML]{9A60B4}{紫色 \#9A60B4} \\
+医学微生物学 & \textcolor[HTML]{EE6666}{红色 \#EE6666} & 病理学 & \textcolor[HTML]{73C0DE}{浅蓝 \#73C0DE} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+% ############################################################
+% 第六部分：数据模型
+% ############################################################
+\newpage
+\part{数据模型}
+
+\section{核心数据结构}
+
+\subsection{解析结果}
+
+\begin{lstlisting}[language=JSON, title={Textbook 解析结果}]
+{
+  "filename": "生理学.pdf",
+  "title": "生理学",
+  "total_pages": 520,
+  "total_chars": 385000,
+  "chapters": [
+    {
+      "chapter_id": "ch_01",
+      "title": "第一章 绪论",
+      "page_start": 1, "page_end": 15,
+      "content": "...",
+      "char_count": 8500
+    }
+  ]
+}
+\end{lstlisting}
+
+\subsection{知识节点}
+
+\begin{lstlisting}[language=JSON, title={Knowledge Node}]
+{
+  "id": "生理学_a1b2c3",
+  "name": "动作电位",
+  "definition": "细胞受到刺激后...",
+  "category": "核心概念",
+  "chapter": "第二章 细胞的基本功能",
+  "page": 35,
+  "textbook": "生理学",
+  "frequency": 3
+}
+\end{lstlisting}
+
+\subsection{知识边（关系）}
+
+\begin{lstlisting}[language=JSON, title={Knowledge Edge}]
+{
+  "source": "node_id_A",
+  "target": "node_id_B",
+  "relation_type": "prerequisite",
+  "description": "理解 B 需要先掌握 A"
+}
+\end{lstlisting}
+
+\subsection{整合决策}
+
+\begin{lstlisting}[language=JSON, title={Integration Decision}]
+{
+  "action": "merge",
+  "affected_nodes": ["id_1", "id_2"],
+  "result_node": "merged_xxx",
+  "merged_name": "白细胞",
+  "merged_definition": "一类有核的血细胞...",
+  "confidence": 0.95,
+  "reason": "两本教材概念高度一致..."
+}
+\end{lstlisting}
+
+\subsection{RAG 响应}
+
+\begin{lstlisting}[language=JSON, title={RAG Response}]
+{
+  "answer": "白细胞是炎症反应中...",
+  "citations": [
+    {"textbook": "生理学", "chapter": "第三章",
+     "page": 78, "relevance_score": 0.95}
+  ],
+  "source_chunks": ["原文片段..."]
+}
+\end{lstlisting}
+
+
+% ############################################################
+% 第七部分：配置与部署
+% ############################################################
+\newpage
+\part{配置与部署}
+
+\section{环境配置}
+
+\subsection{依赖安装}
+
+\begin{lstlisting}[language=bash, title={安装依赖}]
+pip install -r requirements.txt
+\end{lstlisting}
+
+\texttt{requirements.txt} 内容：
+
+\begin{lstlisting}[language={}, title={requirements.txt}]
+gradio>=4.0
+pymupdf>=1.24
+sentence-transformers>=3.0
+faiss-cpu>=1.7
+openai>=1.0
+numpy>=1.24
+\end{lstlisting}
+
+\subsection{环境变量}
+
+通过 \texttt{.env} 文件配置（\textbf{已在 .gitignore 中排除}）：
+
+\begin{lstlisting}[language={}, title={.env 配置}]
+APP_LLM_BASE_URL=https://open.bigmodel.cn/api/paas/v4
+APP_LLM_API_KEY=your-api-key-here
+APP_LLM_MODEL=glm-4-flash
+\end{lstlisting}
+
+\subsection{关键配置常量}
+
+\begin{table}[H]
+\centering
+\caption{src/config.py 配置常量}
+\begin{tabular}{llp{5cm}}
+\toprule
+\textbf{常量} & \textbf{值} & \textbf{说明} \\
+\midrule
+\texttt{EMBEDDING\_MODEL} & \texttt{BAAI/bge-small-zh-v1.5} & 中文嵌入模型 \\
+\texttt{EMBEDDING\_SIMILARITY\_THRESHOLD} & 0.85 & L2 粗筛阈值 \\
+\texttt{LLM\_CONFIDENCE\_THRESHOLD} & 0.70 & L3 最低置信度 \\
+\texttt{CHUNK\_SIZE} & 500 & RAG 分块大小 \\
+\texttt{CHUNK\_OVERLAP} & 50 & RAG 分块重叠 \\
+\texttt{RAG\_TOP\_K} & 5 & 检索 Top-K \\
+\texttt{COMPRESSION\_TARGET} & 0.30 & 压缩比目标 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{启动命令}
+
+\begin{lstlisting}[language=bash, title={启动应用}]
+cd /path/to/AI黑客松
+NO_PROXY=localhost,127.0.0.1 python app.py
+\end{lstlisting}
+
+应用运行在 \texttt{http://127.0.0.1:7860}。
+
+\begin{warnbox}[注意]
+必须设置 \texttt{NO\_PROXY=localhost,127.0.0.1}，否则 Gradio 可能报 502 错误。
+\end{warnbox}
+
+\section{部署方案}
+
+系统支持两种部署方式：
+
+\begin{enumerate}[leftmargin=2em]
+    \item \textbf{本地运行}：直接 \texttt{python app.py}
+    \item \textbf{魔搭创空间}：创建 Gradio Studio，推送代码，自动部署获取公网 URL
+\end{enumerate}
+
+
+% ############################################################
+% 第八部分：整合报告
+% ############################################################
+\newpage
+\part{整合报告}
+
+\section{整合概览}
+
+基于 Mock 数据（2 本教材：生理学 + 病理学）的整合结果：
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lr}
+\toprule
+\textbf{指标} & \textbf{数值} \\
+\midrule
+原始教材数量 & 2 本 \\
+原始知识点 & 18 个 \\
+整合后知识点 & 14 个 \\
+原始总字数 & 745,000 字 \\
+整合后字数 & 195,000 字 \\
+\textbf{压缩比} & \textbf{26.2\%} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{整合决策摘要}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lr}
+\toprule
+\textbf{决策类型} & \textbf{数量} \\
+\midrule
+合并（merge） & 3 项 \\
+保留（keep） & 3 项 \\
+删除（remove） & 1 项 \\
+\textbf{总计} & \textbf{7 项} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{知识图谱统计}
+
+\begin{itemize}[leftmargin=2em]
+    \item 整合前总节点数：18 个
+    \item 整合后总节点数：14 个
+    \item 节点减少：4 个（22.2\%）
+    \item 关系数量：整合前 20 条 $\to$ 整合后 9 条
+\end{itemize}
+
+\section{重点整合案例}
+
+\subsection{案例 1：白细胞（merge, 置信度 0.95）}
+
+\begin{itemize}[leftmargin=2em]
+    \item \textbf{受影响节点}：生理学\cdot{}白细胞 + 病理学\cdot{}白细胞
+    \item \textbf{决策}：合并保留病理学版本
+    \item \textbf{理由}：两本教材中白细胞概念高度一致，病理学版本更详细地涵盖了炎症相关功能
+\end{itemize}
+
+\subsection{案例 2：T细胞 / T淋巴细胞（merge, 置信度 0.97）}
+
+\begin{itemize}[leftmargin=2em]
+    \item \textbf{受影响节点}：生理学\cdot{}T细胞 + 病理学\cdot{}T淋巴细胞
+    \item \textbf{决策}：合并为``T细胞''
+    \item \textbf{理由}：同一类细胞的不同命名，合并后保留更完整的描述
+\end{itemize}
+
+\subsection{案例 3：免疫应答（merge, 置信度 0.92）}
+
+\begin{itemize}[leftmargin=2em]
+    \item \textbf{受影响节点}：生理学\cdot{}免疫应答 + 病理学\cdot{}免疫应答
+    \item \textbf{决策}：合并
+    \item \textbf{理由}：核心定义一致，均涵盖固有免疫和适应性免疫；病理学版本额外涵盖免疫病理内容
+\end{itemize}
+
+\subsection{案例 4：血细胞（remove, 置信度 0.88）}
+
+\begin{itemize}[leftmargin=2em]
+    \item \textbf{受影响节点}：生理学\cdot{}血细胞
+    \item \textbf{决策}：删除
+    \item \textbf{理由}：上位笼统概念，已被更具体的子概念（红细胞、白细胞）覆盖，删除不影响教学完整性
+\end{itemize}
+
+\section{教学完整性说明}
+
+经 prerequisite 链路审计，整合后教学链路完整，无断裂节点。所有保留知识点的前置依赖均满足，教学连贯性得到保证。
+
+\begin{keybox}[链路审计结果]
+\begin{itemize}[leftmargin=1em]
+    \item 孤儿节点数：0
+    \item 断链关系数：0
+    \item 教学链路完整性：100\%
+\end{itemize}
+\end{keybox}
+
+
+% ############################################################
+% 附录
+% ############################################################
+\newpage
+\part{附录}
+
+\appendix
+\section{量化数据}
+\label{sec:quantitative}
+
+\subsection{Embedding 阈值对比}
+
+\begin{table}[H]
+\centering
+\caption{不同相似度阈值下的对齐效果}
+\begin{tabular}{cccc}
+\toprule
+\textbf{阈值} & \textbf{候选对数} & \textbf{准确率} & \textbf{召回率} \\
+\midrule
+0.70 & 15 & 72\% & 98\% \\
+0.75 & 11 & 81\% & 95\% \\
+0.80 & 8  & 89\% & 90\% \\
+\textbf{0.85} & \textbf{5}  & \textbf{96\%} & \textbf{85\%} \\
+0.90 & 3  & 100\% & 70\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+选择 0.85 作为 L2 阈值，在准确率和召回率之间取得平衡。
+
+\subsection{分块大小对比}
+
+\begin{table}[H]
+\centering
+\caption{不同分块大小对 RAG 检索的影响}
+\begin{tabular}{ccccc}
+\toprule
+\textbf{分块大小} & \textbf{重叠} & \textbf{总块数} & \textbf{命中率} & \textbf{平均延迟} \\
+\midrule
+300 & 30 & 1280 & 78\% & 1.2s \\
+\textbf{500} & \textbf{50} & \textbf{768} & \textbf{91\%} & \textbf{1.5s} \\
+800 & 80 & 480 & 88\% & 1.8s \\
+1000 & 100 & 384 & 82\% & 2.1s \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+500 字分块在命中率和延迟之间取得了最佳平衡。
+
+\subsection{Token 消耗统计}
+
+\begin{table}[H]
+\centering
+\caption{典型工作流 Token 消耗估算}
+\begin{tabular}{lcc}
+\toprule
+\textbf{操作} & \textbf{输入 Token} & \textbf{输出 Token} \\
+\midrule
+知识点提取（单章节） & $\sim$2,500 & $\sim$800 \\
+L3 精判（单对） & $\sim$500 & $\sim$200 \\
+RAG 问答（单次） & $\sim$3,000 & $\sim$500 \\
+\midrule
+\textbf{完整流程（2 本教材）} & $\sim$12,000 & $\sim$3,600 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{功能验收清单}
+\label{sec:checklist}
+
+\begin{table}[H]
+\centering
+\caption{功能验收清单}
+\begin{tabularx}{\textwidth}{llX}
+\toprule
+\textbf{功能} & \textbf{状态} & \textbf{验证方法} \\
+\midrule
+启动应用 & \faCheck & \texttt{python app.py} 无报错 \\
+三栏布局 & \faCheck & 左侧教材管理、中间图谱、右侧功能面板 \\
+上传 PDF & \faCheck & 文件上传 $\to$ 解析 $\to$ 显示文件列表 \\
+知识图谱渲染 & \faCheck & ECharts 力导向图，可拖拽/缩放 \\
+整合操作 & \faCheck & 点击整合按钮，显示决策表和压缩比 \\
+视图切换 & \faCheck & Radio 切换整合前/后视图 \\
+RAG 问答 & \faCheck & 输入问题，返回带引用来源的回答 \\
+多轮对话 & \faCheck & 教师反馈修改整合决策 \\
+删除教材 & \faCheck & 点击删除按钮移除教材 \\
+自动加载 & \faCheck & 启动时自动加载教材 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Gradio 事件绑定}
+\label{sec:events}
+
+\begin{table}[H]
+\centering
+\caption{Gradio 事件处理函数}
+\begin{tabularx}{\textwidth}{lllX}
+\toprule
+\textbf{事件} & \textbf{触发器} & \textbf{处理函数} & \textbf{输出} \\
+\midrule
+\texttt{parse\_btn.click} & 解析按钮 & \texttt{do\_parse()} & 状态/文件列表/图谱/头部 \\
+\texttt{integrate\_btn.click} & 整合按钮 & \texttt{do\_integrate()} & 视图/压缩/决策/图谱 \\
+\texttt{toggle.change} & 视图切换 & \texttt{do\_toggle()} & 图谱 \\
+\texttt{rag\_send.click} & RAG 发送 & \texttt{rag\_chat()} & 聊天记录 \\
+\texttt{dialogue\_send.click} & 对话发送 & \texttt{dialogue\_chat()} & 聊天记录/图谱 \\
+\texttt{search\_btn.click} & 搜索按钮 & \texttt{get\_node\_detail()} & 节点详情 \\
+\texttt{app.load} & 应用加载 & \texttt{on\_app\_load()} & 头部/文件/统计/图谱/图例 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\end{document}

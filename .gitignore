@@ -8,3 +8,8 @@ node_modules/
 data/textbooks/
 *.pdf
 data/
+
+# 缓存文件（不上传到 GitHub）
+cache/
+*.pkl
+*.index
