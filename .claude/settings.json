@@ -50,7 +50,11 @@
       "Bash(git commit -m ' *)",
       "Bash(gh repo *)",
       "Bash(venv/Scripts/pip install *)",
-      "Bash(venv/Scripts/python -c ' *)"
+      "Bash(venv/Scripts/python -c ' *)",
+      "Bash(git push *)",
+      "Bash(curl -s http://127.0.0.1:7860/)",
+      "Bash(curl -s 'http://127.0.0.1:7860/api/predict' -H 'Content-Type: application/json' -d '{}')",
+      "Bash(curl -s -N 'http://127.0.0.1:7860/queue/join' -H 'Content-Type: application/json' -d '{\"data\":[],\"fn_index\":0}')"
     ],
     "additionalDirectories": [
       "c:\\projects\\AI黑客松"

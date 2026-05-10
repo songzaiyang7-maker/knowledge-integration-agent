@@ -83,14 +83,22 @@ def process_textbook(parsed_data: dict) -> dict:
 
     name_to_id = {}
     book_prefix = title[:3]
+    llm_calls = 0
+    MAX_LLM_CALLS_PER_BOOK = 8  # Limit LLM calls per textbook
 
-    for chapter in parsed_data.get("chapters", []):
+    # Sort chapters by content length (descending), pick the most important ones
+    chapters = [ch for ch in parsed_data.get("chapters", []) if len(ch.get("content", "").strip()) >= 100]
+    # Take front matter + largest chapters
+    chapters = sorted(chapters, key=lambda ch: len(ch.get("content", "")), reverse=True)[:MAX_LLM_CALLS_PER_BOOK]
+
+    for chapter in chapters:
         content = chapter.get("content", "")
-        if len(content.strip()) < 50:
+        if len(content.strip()) < 100:
             continue
 
         chapter_title = chapter.get("title", "")
         page_start = chapter.get("page_start", 1)
+        llm_calls += 1
 
         result = extract_knowledge_points(content, title, chapter_title)
 

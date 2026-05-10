@@ -139,7 +139,7 @@ class AppState:
         self.rag = None              # RAGPipeline instance
 
         # File list for display: [[name, format, size, status], ...]
-        self.file_list = list(MOCK_FILE_LIST)
+        self.file_list = []  # Empty initially, will be populated by parse
 
 state = AppState()
 
@@ -148,9 +148,9 @@ state = AppState()
 # ============================================================
 
 def hdr():
-    mode_label = "真实模式" if state.mode == "real" else "Mock 数据模式"
-    tb_count = len(state.parsed_textbooks) if state.mode == "real" else 2
-    node_count = len(state.all_nodes) if state.mode == "real" else 18
+    mode_label = "真实模式" if state.mode == "real" else "等待上传教材"
+    tb_count = len(state.parsed_textbooks) if state.mode == "real" else 0
+    node_count = len(state.all_nodes) if state.mode == "real" else 0
     return f"""<div class="hdr">
   <div class="hdr-left"><div class="hdr-logo">K</div><div class="hdr-title">学科知识整合智能体</div></div>
   <div class="hdr-status"><span class="dot-live"></span>{mode_label} · {tb_count} 本教材 · {node_count} 个知识点</div>
@@ -219,11 +219,11 @@ def get_graph_html():
         nodes = state.integrated_nodes if state.is_integrated else state.all_nodes
         edges = state.integrated_edges if state.is_integrated else state.all_edges
     else:
-        nodes = MOCK_INTEGRATED_NODES if state.is_integrated else MOCK_NODES
-        edges = MOCK_INTEGRATED_EDGES if state.is_integrated else MOCK_EDGES
+        # Mock mode only activates if user hasn't uploaded anything yet
+        return '<div style="text-align:center;padding:80px 40px;color:#94a3b8;font-size:14px"><div style="font-size:48px;margin-bottom:16px">🕸️</div>上传教材并点击「解析教材」<br>知识图谱将在此展示</div>'
     title = "整合后" if state.is_integrated else "整合前"
     if not nodes:
-        return '<div style="text-align:center;padding:60px;color:#94a3b8;font-size:14px">暂无数据，请先上传并解析教材</div>'
+        return '<div style="text-align:center;padding:80px 40px;color:#94a3b8;font-size:14px"><div style="font-size:48px;margin-bottom:16px">🕸️</div>暂无知识点数据</div>'
     return render_knowledge_graph(nodes, edges, state.book_colors, title=title)
 
 def get_node_detail(q):
@@ -489,6 +489,92 @@ def build_report():
     return report
 
 # ============================================================
+# Auto-load textbooks
+# ============================================================
+
+def auto_load_textbooks():
+    """Auto-load and parse all textbooks from Desktop/textbooks directory."""
+    textbooks_dir = r"c:\Users\user\Desktop\textbooks"
+    if not os.path.isdir(textbooks_dir):
+        return
+
+    pdf_files = [
+        os.path.join(textbooks_dir, f)
+        for f in os.listdir(textbooks_dir)
+        if f.lower().endswith(".pdf") and "赛题" not in f
+    ]
+
+    if not pdf_files:
+        return
+
+    print(f"Auto-loading {len(pdf_files)} textbooks...")
+    state.mode = "real"
+
+    try:
+        from src.pdf_parser import parse_file
+        from src.knowledge_extractor import process_textbook
+        from src.graph_builder import build_graph
+        from src.rag_pipeline import RAGPipeline
+
+        for pdf_path in pdf_files:
+            fname = os.path.basename(pdf_path)
+            print(f"  Parsing: {fname}")
+
+            try:
+                parsed = parse_file(pdf_path)
+                state.parsed_textbooks.append(parsed)
+
+                extraction = process_textbook(parsed)
+                state.extraction_results.append(extraction)
+
+                size_mb = f"{os.path.getsize(pdf_path) / 1024 / 1024:.1f} MB"
+                state.file_list.append([fname, "PDF", size_mb, "已完成"])
+
+                print(f"    OK {len(extraction.get('nodes',[]))} nodes, {len(extraction.get('edges',[]))} edges")
+
+            except Exception as e:
+                size_mb = f"{os.path.getsize(pdf_path) / 1024 / 1024:.1f} MB"
+                state.file_list.append([fname, "PDF", size_mb, "失败"])
+                print(f"    FAILED: {e}")
+                traceback.print_exc()
+
+        # Build unified graph
+        if state.extraction_results:
+            all_nodes, all_edges, colors = build_graph(state.extraction_results)
+            state.all_nodes = all_nodes
+            state.all_edges = all_edges
+            state.book_colors = colors
+            print(f"Graph: {len(all_nodes)} nodes, {len(all_edges)} edges")
+
+            # Build RAG index
+            try:
+                state.rag = RAGPipeline()
+                for parsed in state.parsed_textbooks:
+                    state.rag.add_textbook(parsed)
+                state.rag.build_index()
+                rag_info = state.rag.get_status()
+                print(f"RAG: {rag_info['total_chunks']} chunks indexed")
+            except Exception as e:
+                print(f"RAG indexing failed: {e}")
+
+        print(f"Auto-load complete: {len(state.parsed_textbooks)} textbooks loaded")
+
+    except Exception as e:
+        print(f"Auto-load error: {e}")
+        traceback.print_exc()
+
+
+def on_app_load():
+    """Refresh UI after data is loaded."""
+    return (
+        hdr(),
+        build_file_list_html(),
+        build_stats_html(),
+        get_graph_html(),
+        build_legend_html(),
+    )
+
+# ============================================================
 # Gradio UI
 # ============================================================
 
@@ -570,8 +656,20 @@ with gr.Blocks(title="学科知识整合智能体", css=CSS) as app:
     dialogue_input.submit(fn=dialogue_chat, inputs=[dialogue_input, dialogue_chatbot], outputs=[dialogue_chatbot, dialogue_input, graph_display])
     search_btn.click(fn=get_node_detail, inputs=[node_search], outputs=[node_detail])
 
+    # Auto-load: refresh UI on first browser visit
+    app.load(
+        fn=on_app_load,
+        inputs=[],
+        outputs=[header_display, file_list_display, stats_display, graph_display, legend_display],
+    )
+
 
 if __name__ == "__main__":
     os.environ["NO_PROXY"] = "localhost,127.0.0.1"
     os.environ["no_proxy"] = "localhost,127.0.0.1"
+
+    # Pre-load textbooks before launching server
+    print("Pre-loading textbooks from Desktop/textbooks...")
+    auto_load_textbooks()
+
     app.launch(server_name="127.0.0.1", server_port=7860)

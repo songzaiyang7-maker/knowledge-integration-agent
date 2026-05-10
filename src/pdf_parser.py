@@ -8,6 +8,9 @@ import fitz  # PyMuPDF
 def parse_pdf(file_path: str) -> dict:
     """Parse a PDF file and extract chapters with content.
 
+    Merges pages belonging to the same chapter, producing real chapter-level
+    content blocks instead of per-page fragments.
+
     Returns:
         dict with keys: filename, title, total_pages, total_chars, chapters
     """
@@ -15,79 +18,99 @@ def parse_pdf(file_path: str) -> dict:
     filename = os.path.basename(file_path)
     title = os.path.splitext(filename)[0]
 
-    chapters = []
-    current_chapter = None
-    total_chars = 0
-
+    # Extract all page texts first
+    page_texts = []
     for page_num in range(len(doc)):
         page = doc[page_num]
         text = page.get_text("text")
-
-        # Filter headers/footers (short repeated lines)
         lines = text.split("\n")
         filtered = []
         for line in lines:
             stripped = line.strip()
             if not stripped:
                 continue
-            # Skip page numbers
             if re.match(r"^\d+$", stripped):
                 continue
-            # Skip very short lines that look like headers/footers
             if len(stripped) < 4 and not re.match(r"[一-鿿]", stripped):
                 continue
             filtered.append(stripped)
+        page_texts.append("\n".join(filtered))
 
-        page_text = "\n".join(filtered)
+    # Detect true chapter boundaries by finding NEW chapter titles
+    # A chapter title is "第X章 ..." that differs from the previous page's chapter
+    chapter_breaks = []  # list of (page_num, chapter_title)
+    prev_ch_title = None
 
-        # Detect chapter boundaries
-        chapter_match = re.match(r"^(第[一二三四五六七八九十百千\d]+章\s*.+)", page_text)
+    for page_num, text in enumerate(page_texts):
+        # Look for chapter title in first few lines
+        for line in text.split("\n")[:3]:
+            m = re.match(r"^(第[一二三四五六七八九十百千\d]+[章节]\s*\S*)", line)
+            if m:
+                ch_title = m.group(1).strip()
+                if ch_title != prev_ch_title:
+                    chapter_breaks.append((page_num, line.strip()))
+                    prev_ch_title = ch_title
+                break
 
-        if chapter_match:
-            # Save previous chapter
-            if current_chapter:
-                current_chapter["content"] = current_chapter["content"].strip()
-                current_chapter["char_count"] = len(current_chapter["content"])
-                total_chars += current_chapter["char_count"]
-                chapters.append(current_chapter)
+    # If no chapters detected, treat entire doc as one chapter
+    if not chapter_breaks:
+        all_text = "\n".join(page_texts)
+        total_pages = len(doc)
+        doc.close()
+        return {
+            "filename": filename,
+            "title": title,
+            "total_pages": total_pages,
+            "total_chars": len(all_text),
+            "chapters": [{
+                "chapter_id": "ch_01",
+                "title": "全文",
+                "page_start": 1,
+                "page_end": total_pages,
+                "content": all_text,
+                "char_count": len(all_text),
+            }],
+        }
 
-            ch_title = chapter_match.group(1).strip()
-            current_chapter = {
-                "chapter_id": f"ch_{len(chapters) + 1:02d}",
-                "title": ch_title,
-                "page_start": page_num + 1,
-                "page_end": page_num + 1,
-                "content": page_text,
-                "char_count": 0,
+    # Build chapters from breaks
+    chapters = []
+    total_chars = 0
+    for i, (start_page, ch_title) in enumerate(chapter_breaks):
+        end_page = chapter_breaks[i + 1][0] - 1 if i + 1 < len(chapter_breaks) else len(page_texts) - 1
+        content = "\n".join(page_texts[start_page:end_page + 1]).strip()
+        ch = {
+            "chapter_id": f"ch_{i + 1:02d}",
+            "title": ch_title,
+            "page_start": start_page + 1,
+            "page_end": end_page + 1,
+            "content": content,
+            "char_count": len(content),
+        }
+        total_chars += ch["char_count"]
+        chapters.append(ch)
+
+    # Add front matter (pages before first chapter) if exists
+    if chapter_breaks[0][0] > 0:
+        front_text = "\n".join(page_texts[:chapter_breaks[0][0]]).strip()
+        if front_text:
+            front_ch = {
+                "chapter_id": "ch_00",
+                "title": "前言/目录",
+                "page_start": 1,
+                "page_end": chapter_breaks[0][0],
+                "content": front_text,
+                "char_count": len(front_text),
             }
-        else:
-            if current_chapter is None:
-                # Content before first chapter heading
-                current_chapter = {
-                    "chapter_id": "ch_00",
-                    "title": "前言/目录",
-                    "page_start": page_num + 1,
-                    "page_end": page_num + 1,
-                    "content": page_text,
-                    "char_count": 0,
-                }
-            else:
-                current_chapter["content"] += "\n" + page_text
-                current_chapter["page_end"] = page_num + 1
+            total_chars += front_ch["char_count"]
+            chapters.insert(0, front_ch)
 
-    # Save last chapter
-    if current_chapter:
-        current_chapter["content"] = current_chapter["content"].strip()
-        current_chapter["char_count"] = len(current_chapter["content"])
-        total_chars += current_chapter["char_count"]
-        chapters.append(current_chapter)
-
+    total_pages = len(doc)
     doc.close()
 
     return {
         "filename": filename,
         "title": title,
-        "total_pages": len(doc) if hasattr(doc, '__len__') else 0,
+        "total_pages": total_pages,
         "total_chars": total_chars,
         "chapters": chapters,
     }
