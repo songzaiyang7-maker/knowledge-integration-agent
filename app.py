@@ -30,11 +30,12 @@ from src.config import UPLOAD_DIR
 # from src.rag_pipeline import RAGPipeline
 # from src.embedding import encode_texts
 
-# Static file server
-_STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
-_handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=_STATIC_DIR)
-_httpd = http.server.HTTPServer(("127.0.0.1", 8080), _handler)
-threading.Thread(target=_httpd.serve_forever, daemon=True).start()
+# Static file server (local only — not needed in cloud deployment)
+if os.environ.get("SPACE_ID") is None:
+    _STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+    _handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=_STATIC_DIR)
+    _httpd = http.server.HTTPServer(("127.0.0.1", 8080), _handler)
+    threading.Thread(target=_httpd.serve_forever, daemon=True).start()
 
 # ============================================================
 # Premium CSS
@@ -595,8 +596,20 @@ def save_cache():
 # ============================================================
 
 def auto_load_textbooks():
-    """Auto-load and parse all textbooks from Desktop/textbooks directory."""
-    textbooks_dir = r"c:\Users\user\Desktop\textbooks"
+    """Auto-load and parse all textbooks from textbook directory."""
+    # Support cloud deployment: check multiple possible paths
+    textbooks_dir = os.environ.get("TEXTBOOKS_DIR", r"c:\Users\user\Desktop\textbooks")
+    if not os.path.isdir(textbooks_dir):
+        # Fallback: look for data/textbooks or data/ in project root
+        for fallback in [
+            os.path.join(os.path.dirname(__file__), "data", "textbooks"),
+            os.path.join(os.path.dirname(__file__), "data"),
+        ]:
+            if os.path.isdir(fallback):
+                textbooks_dir = fallback
+                break
+        else:
+            return
     if not os.path.isdir(textbooks_dir):
         return
 
@@ -774,8 +787,11 @@ with gr.Blocks(title="学科知识整合智能体", css=CSS) as app:
 
 
 if __name__ == "__main__":
-    os.environ["NO_PROXY"] = "localhost,127.0.0.1"
-    os.environ["no_proxy"] = "localhost,127.0.0.1"
+    is_cloud = os.environ.get("SPACE_ID") is not None
+
+    if not is_cloud:
+        os.environ["NO_PROXY"] = "localhost,127.0.0.1"
+        os.environ["no_proxy"] = "localhost,127.0.0.1"
 
     # Load cache BEFORE launching server — instant startup if cache exists
     if load_cache():
@@ -783,4 +799,6 @@ if __name__ == "__main__":
     else:
         print("No cache found. Run 'python cache_builder.py' first to pre-build cache.")
 
-    app.launch(server_name="127.0.0.1", server_port=7860)
+    server_name = "0.0.0.0" if is_cloud else "127.0.0.1"
+    server_port = int(os.environ.get("SERVER_PORT", 7860))
+    app.launch(server_name=server_name, server_port=server_port)

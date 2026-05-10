@@ -1,3 +1,15 @@
+---
+title: 学科知识整合智能体
+emoji: 🧠
+colorFrom: indigo
+colorTo: purple
+sdk: gradio
+sdk_version: 5.50.0
+app_file: app.py
+pinned: false
+license: mit
+---
+
 # 学科知识整合智能体
 
 > AI 全栈黑客松参赛作品 — 基于知识图谱的多教材知识整合与 RAG 问答系统

@@ -65,11 +65,13 @@ def render_knowledge_graph(nodes, edges, book_colors, title="知识图谱"):
     edges_json = json.dumps(echarts_edges, ensure_ascii=False)
     categories_json = json.dumps(categories, ensure_ascii=False)
 
-    # Read echarts.min.js content
+    # Embed ECharts JS inline (works in cloud environments without static file server)
     echarts_js_path = os.path.join(_GRAPH_HTML_DIR, "echarts.min.js")
     echarts_js_tag = '<p style="color:red;padding:20px;">ECharts JS 文件未找到</p>'
     if os.path.exists(echarts_js_path):
-        echarts_js_tag = '<script src="http://127.0.0.1:8080/echarts.min.js"></script>'
+        with open(echarts_js_path, "r", encoding="utf-8") as f:
+            echarts_js_content = f.read()
+        echarts_js_tag = f'<script>{echarts_js_content}</script>'
 
     graph_html = f"""<!DOCTYPE html>
 <html>
@@ -155,12 +157,5 @@ def render_knowledge_graph(nodes, edges, book_colors, title="知识图谱"):
 </body>
 </html>"""
 
-    # Write graph HTML to static directory and return iframe
-    graph_file_path = os.path.join(_GRAPH_HTML_DIR, "graph.html")
-    os.makedirs(_GRAPH_HTML_DIR, exist_ok=True)
-    with open(graph_file_path, "w", encoding="utf-8") as f:
-        f.write(graph_html)
-
-    import time
-    ts = int(time.time() * 1000)
-    return f'<iframe src="http://127.0.0.1:8080/graph.html?t={ts}" width="100%" height="650px" frameborder="0" style="border:none;"></iframe>'
+    # Return inline HTML directly (no iframe needed, works in cloud)
+    return f'<div style="width:100%;height:650px;">{graph_html}</div>'

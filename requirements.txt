@@ -4,3 +4,4 @@ sentence-transformers>=3.0
 faiss-cpu>=1.7
 openai>=1.0
 numpy>=1.24
+python-dotenv>=1.0
